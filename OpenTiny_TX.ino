@@ -1,4 +1,3 @@
-
 #include "config.h"
 #include <EEPROM.h>
 #include <avr/wdt.h>
