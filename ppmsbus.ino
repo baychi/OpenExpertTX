@@ -1,3 +1,13 @@
+// **********************************************************
+// Baychi soft 2013
+// **      RFM22B/23BP/Si4432 Transmitter with Expert protocol **
+// **      This Source code licensed under GPL            **
+// **********************************************************
+// Latest Code Update : 2013-10-22
+// Supported Hardware : Expert Tiny, Orange/OpenLRS Tx/Rx boards (store.flytron.com)
+// Project page       : https://github.com/baychi/OpenExpertTX
+// **********************************************************
+
 //-------------------------------------------------------
 // 
 // Реализация протокола SBUS через ICP/INTx(возможно) вход.
@@ -19,25 +29,23 @@ static word lastP=0;
 
 static void processPulse(word pulse)
 {
-
-  pCntr++;
-  if(pCntr&1) {
+  pCntr++;                                      // так как наш драйвер ловит оба фронта
+  if(!(pCntr&1)) {                                 // половину нужно игнорировать  
     lastP=pulse;
     return;
   }
-  pulse+=lastP;                                  // так как наш драйвер ловит оба фронта
+  pulse+=lastP;                                  
 
-  if (ppmDetecting) {                              // на стадии детектирования определяем наличие импульсов
+  if (ppmDetecting) {                           // на стадии детектирования определяем наличие импульсов
     if (ppmDetecting>50) {
       ppmDetecting=0;
-      if(ppmSBUS>20) {
+      if(ppmSBUS>10) {
         ppmMicroPPM=0xff;                        // признак работы в режиме SBUS
       } else if(ppmMicroPPM>10) {
         ppmMicroPPM=1;                           // работа в режиме Futaba PPM12
       } else {
         ppmMicroPPM=0;
       }
-      // Serial.println(ppmMicroPPM?"Futaba micro mode":"Normal PPM mode");
     } else {
       if (pulse<100)                              // импульсы короче 50 мкс трактуем, как SBUS
         ppmSBUS++;                           
@@ -48,24 +56,32 @@ static void processPulse(word pulse)
     }
   } else {
     if (!ppmMicroPPM) {
-      pulse= (pulse+1)>>1;                        // divide by 2 to get servo value on normal PPM
+      pulse= (pulse+1)>>1;                        // переводим в микросекунды
     }
 
-    if (pulse > 2500) {      // Verify if this is the sync pulse (2.5ms)
-      ppmCounter = 0;             // -> restart the channel counter
-      ppmAge = 0;                 // brand new PPM data received
-    } else if ((pulse > 700) && (ppmCounter < RC_CHANNEL_COUNT)) { // extra channels will get ignored here
-      PPM[ppmCounter++] = pulse;   // Store measured pulse length (converted)
+    if (pulse > 2500) {            // Если обнаружена пауза свыше 2.5 мс
+      ppmCounter = 0;              // переходим к первому канала
+      ppmAge = 0;                  // призна поступления нового пакета
+    } else if ((pulse > 700) && (ppmCounter < RC_CHANNEL_COUNT)) { 
+      PPM[ppmCounter++] = pulse;   // Запоминаем очередной импульс
     } else {
-      ppmCounter = RC_CHANNEL_COUNT; // glitch ignore rest of data
+      ppmCounter = RC_CHANNEL_COUNT; // Короткие пички отключают цикл
     }
   }
 }
 
-#define PULSE_BUF_SIZE 64
-volatile word pulseBuf[PULSE_BUF_SIZE];       // буфер фронтов импульсов принимаемых через PPM вход
-volatile word *pbPtr=pulseBuf;    // указатель в буфере импульсов
-#ifdef USE_ICP1 // Use ICP1 in input capture mode
+
+#define PULSE_BUF_SIZE 222                // размер буфера импульсов
+volatile word pulseBuf[PULSE_BUF_SIZE];   // буфер фронтов импульсов принимаемых через PPM вход
+volatile word *pbPtr=pulseBuf;            // указатель в буфере импульсов
+byte eCntr1=0;                            // счетчик ошибок четности sbus
+word eCntr2=0;                            // счетчик битых пакетов sbus
+
+// -----------------------------------------------------------
+//
+// Обработчики прерываний
+
+#ifdef USE_ICP1 // Правильный режим -  использованиие ICP1 in input capture mode
 
 ISR(TIMER1_CAPT_vect)
 {
@@ -89,11 +105,11 @@ void setupPPMinput()
 }
 
 #else // sample PPM using pinchange interrupt
+
 ISR(PPM_Signal_Interrupt)
 {
     *pbPtr++=TCNT1;  // просто сохраняем значение и продвигаемся в буфере
-    if(pbPtr >= pulseBuf+PULSE_BUF_SIZE)) pbPtr=pulseBuf;
-    TCNT1 = 0; // reset the timer1 value for next
+    if(pbPtr >= pulseBuf+PULSE_BUF_SIZE) pbPtr=pulseBuf;
 }
 
 void setupPPMinput(void)
@@ -109,87 +125,215 @@ void setupPPMinput(void)
 }
 #endif
 
+ISR(INT0_vect){                 // обработчик прерывания от RFMки НЕ используется
+/****************************
+  if (RF_Mode == Transmit) {
+    RF_Mode = Transmitted;
+  }
 
+  if (RF_Mode == Receive) {
+    RF_Mode = Received;
+  }
+**************************/  
+}  
 
-byte sbusPkt[25];        // буфер для борки пакета sbus
-byte curByte=0, bitFlag=0, bitCntr=0, pktPtr=0;
+// Рвбота с SBUS протоколом
+
+byte sbusPkt[25];          // буфер для сборки пакета sbus
+byte curByte=0, bitFlag=0, bitCntr=0, pktPtr=0;   // текущий байт, бит, счетчики бит и байт
+byte bit1Cntr=0;           // счетчик единичных бит
 unsigned long lastIn=0;    // момент последнего поступления данных
 static word lastPulse=0;
 
-void newPkt( void)
+void inline endPkt(void)        // завершаем текущий пакет, проверяем и переносим данные в массив PPM длительностей
 {
-  if(pktPtr) endPkt();   // если пакет был в стадии формирования завершим его и передадим обработчику 
-  curByte=0, bitFlag=0, bitCntr=0;
-  pktPtr=0;
+   byte i,j,k,m;
+   word pwm,wm;
+   
+   if(pktPtr >= sizeof(sbusPkt) && eCntr1 == 0 &&  // если набран кворум, нет ошибок по четности
+      sbusPkt[0] == 0x0F && sbusPkt[24] == 0x00 ) {  // проверяем начало и конец
+      k=m=1;                                 // счетчик байт в sbus и маска бита
+      for(i=0; i<RC_CHANNEL_COUNT; i++) {    // формируем наши PPM длительности  
+        pwm=0; wm=1;
+        for(j=0; j<11; j++) {          // счетчик бит в представлении
+          if(sbusPkt[k] & m) pwm |= wm;
+          wm += wm;
+          if(m == 0x80) { m=1; k++; } // обнуляем
+          else m = m + m;             // или двигаем маску
+        }
+        PPM[i]=((pwm+pwm+pwm+pwm+pwm+5)>>3) + 880;   // формируем значение в PPM буфере
+      }    
+      ppmAge = 0;                    // признак обновления PPM
+   } else if(pktPtr) eCntr2++;       // считаем ошибки, если были пакеты в стадии формирования
+
+   curByte=bitFlag=bitCntr=pktPtr=bit1Cntr=eCntr1=0;
 }
 
-void endPkt(void)
-{
-}
+#define TICK_IN_BIT 20      // количество тиков по 0.5 мкс на один бит
 
-
-void sbusPulse(word val)
+void inline sbusPulse(word val)    // обработка очередного принятого импульса
 {
-  val=(val+32)/56;
-  if(bitCntr == 0) { val--; bitCntr=1; }  // стартовый бит пропускаем
-  while(val > 0) {
-    curByte |= bitFlag << (bitCntr-1);
-    bitCntr++;
-    if(bitCntr > 8)  {
-      sbusPkt[pktPtr] = curByte;
-      curByte=0; bitCntr=0;
-      if(++pktPtr > sizeof(sbusPkt)) {
+  byte i=(val+TICK_IN_BIT/2)/TICK_IN_BIT;    // сколько бит формируем 
+  if(i > 10) { endPkt(); return; }           // паузы трактуем, как паузы между пакетами
+  
+  if(bitCntr == 0) { i--; bitCntr=1; }  // стартовый бит пропускаем
+  for(;  i > 0; i--) {
+    bit1Cntr += bitFlag;                 // считаем единичные биты  
+    curByte |= bitFlag << (bitCntr-1);   // формируем текущий байт
+    if(++bitCntr == 12 || (bitCntr>9 && pktPtr >= 24))  {                  // при поступлении стопового бита
+      sbusPkt[pktPtr] = curByte;         // запоминаем сформированный байт
+      eCntr1+=(bit1Cntr&1);              // считаем ошибки по четности
+      curByte=bitCntr=bit1Cntr=0;
+      if(++pktPtr >= sizeof(sbusPkt)) {
         endPkt();
         break;
       }
-    } 
-    val--;
+    }
   }
-  bitFlag=1-bitFlag;
+  bitFlag=1-bitFlag;                      // меняем значение бита на противополеженное 
 }  
 
 word *ppmPtr= (word* ) pulseBuf;
 unsigned long loopTime=0;
+word ppmDif=0,mppmDif=0;
 
-void ppmLoop(void)
+void ppmLoop(byte m)                       // Фоновый цикл обработки импульсов. Самая ресурсоемкая часть программы в sbus режиме
 {
-  word i,j,*lastPb;
-//--------------------------------------
-  if(loopTime > 0) {
-    i=micros()-loopTime;
-    if(maxDif < i) maxDif=i;
-  }
-  loopTime=micros();
-//-------------------------------
+  word i,j,n,*lastPb;
+  unsigned long lt;
 
   cli();
-  lastPb=(word *)pbPtr;   // берем текущиее положение указателя драйвера
+  lastPb=(word *)pbPtr;       // берем текущиее положение указателя драйвера
   sei();   
+
+//---------------------------------- отладка для контроля времени и буфера импульсов 
+  if(Regs4[5]&2) {           // если отладка включена   
+    lt=micros(); 
+    i=lt-loopTime;  
+    if(maxDif < i) maxDif=i;  // меряем максимальное время цикла ppmLoop
+    loopTime=lt;
+    
+    ppmDif=lastPb-ppmPtr;
+    if(ppmDif >= PULSE_BUF_SIZE) ppmDif=PULSE_BUF_SIZE+ppmDif;
+    if(mppmDif<ppmDif) mppmDif=ppmDif; // меряем максимальное количество необработанных времен в буфере
+  }
+//-------------------------------
  
-  while(ppmPtr != lastPb) {  // пока есть новые данные в буфере
-     cli();
+  for(n=0; ppmPtr != lastPb && n < m; n++) {  // пока есть новые данные в буфере, обрабатываем порцию размером до n 
      i=*ppmPtr++;
-     sei();   
      if(ppmPtr >= pulseBuf+PULSE_BUF_SIZE) ppmPtr=(word *)pulseBuf;
      j=i-lastPulse; 
      lastPulse=i;
      if(ppmMicroPPM != 255) processPulse(j); 
-     else {
-       lastIn=micros();
-       sbusPulse(j); 
-     }
+     else sbusPulse(j); 
   }
-  if(pktPtr && (micros() - lastIn) > 999) endPkt();  // завершение пакета по таймауту
- 
 }
 
-void showSbus()
+
+// Отслеживание и отображение изменения состояния
+
+word prevDif=0, prevErr=0, prevLat=0;
+byte nchan=0, prevMode=0;
+char prevTemp=0;
+int ptAvr=0;
+byte ptAvrCnt=0;
+byte showNum=0;
+
+bool checkTemp(void)            // проверяем, нужно ли отображать изменение температуры (что-бы не плясать на границе градуса)
 {
-//        if(1) {
-//          for(i=0; i<j; i++) { Serial.print(int(vbuf[i]),HEX); Serial.print(" "); }
-//          Serial.println(); 
-//        } else {
-//          Serial.println("Waiting Sbus\r");
-//          delay(299);
-//        }
+  signed char d=prevTemp - curTemperature;
+
+  if(d == 0) return false;
+
+  if(abs(d) >= 2) {            // Более 1 градуса отображаем сразу
+    ptAvr=0; 
+    ptAvrCnt=0;
+    return true;
+  }
+ 
+  if(ptAvrCnt >= 99) {        // Проверяем усреднение за 3 сек
+     if((ptAvr/ptAvrCnt) != curTemperature) {
+       ptAvr=0; 
+       ptAvrCnt=0;
+       return true;
+     }
+  } else {
+    ptAvr += curTemperature;
+    ptAvrCnt++;
+  }
+
+  return false;
 }
+
+bool showState(void)   // Отображение состояния после отправки пакета 
+{
+  if(checkTemp() || prevErr != eCntr2 ||  prevMode != ppmAge || prevDif != maxDif || prevLat != mppmDif) {
+     prevDif=maxDif;
+     prevErr=eCntr2;
+     prevTemp=curTemperature;
+     prevMode = ppmAge;
+     prevLat = mppmDif;
+
+     if(ppmAge == 255) Serial.print("Waiting start:");
+     else if(ppmAge > 5) Serial.print("Input lost:");
+     else {
+       if(!nchan) {            // один раз подстчитаем каналы PPM
+         for(byte i=0; i<RC_CHANNEL_COUNT; i++) {
+            if(PPM[i]) nchan++;
+         }
+         ppmLoop();
+       } 
+       if(ppmMicroPPM == 255) Serial.print("SBUS mode:");
+       else {
+         if(ppmMicroPPM) Serial.print("Futaba 750u ");
+         Serial.print("PPM");   ppmLoop();
+         Serial.print(nchan); Serial.print(" mode:");
+       }
+     }
+     ppmLoop();
+     Serial.print(" T=");  Serial.print((int)prevTemp);  // температура
+     Serial.print(" Tc=");  Serial.print((int)freqCorr);  // поправка частоты
+     ppmLoop();
+     
+     if(Regs4[5]&2) {           // если требуется доп. информация
+       Serial.print(" L=");  Serial.print(prevDif);    // макс длительность цикла
+       ppmLoop();
+       if(ppmMicroPPM == 255) {      // в режиме SBus 
+         Serial.print(" S=");  Serial.print(prevLat);  // макс. запаздывание
+         ppmLoop();
+         Serial.print(" E=");  Serial.print(prevErr);  // ошибки пакетов
+         ppmLoop();
+       }
+     }
+
+     Serial.println("                         ");      // подчистим грязь
+     showNum=0;
+     return true;
+  } 
+  
+  if(Regs4[5]&1) {
+    Serial.print(PPM[showNum]);
+    ppmLoop();
+    Serial.print(" ");
+    if(++showNum >= nchan) {
+       Serial.print("\r");
+       showNum=0;
+    }
+  }
+  return false;
+}
+
+bool checkPPM(void)         // проверка PPM/SBUS на failSafe ретранслятора
+{
+  if(Regs4[4]) {                   // если проверка разрешена
+    if(ppmMicroPPM == 255) {       // режим SBUS, FS = бит3 в управл. байте
+      if(sbusPkt[23]&0x8) return false;
+    } else {
+      for(byte i=0; i<nchan; i++) {
+         if(PPM[i] < 998 || PPM[i] > 2011) return false;  // проверяем выход канала за диапазон
+      }
+    }
+
+  }
+  return true;            // PPM в порядке
+}  
