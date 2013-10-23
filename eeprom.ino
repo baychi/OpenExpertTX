@@ -1,12 +1,12 @@
 // **********************************************************
-// **                OpenLRS EEPROM Functions              **
-// **        Developed by Melih Karakelle on 2010-2012     **
-// **          This Source code licensed under GPL         **
+// Baychi soft 2013
+// **      RFM22B/23BP/Si4432 Transmitter with Expert protocol **
+// **      This Source code licensed under GPL            **
 // **********************************************************
-// Latest Code Update : 2012-03-09
-// Supported Hardware : OpenLRS Rx-Tx boards (store.flytron.com)
-// Project Forum      : http://forum.flytron.com/viewforum.php?f=7
-// Google Code Page   : http://code.google.com/p/openlrs/
+// Latest Code Update : 2013-10-22
+// Supported Hardware : Expert Tiny, Orange/OpenLRS Tx/Rx boards (store.flytron.com)
+// Project page       : https://github.com/baychi/OpenExpertTX
+// **********************************************************
 
 #define REGS_EERPON_ADR 17     /* first byte of eeprom */
 #define FS_EEPROM_ADR   64     /* address of FS settings   */
@@ -69,48 +69,34 @@ int flash_check(void)
 
 
 // Чтение всех настроек
-int read_eeprom(void)
+bool read_eeprom(void)
 {
-   unsigned int i, ks=0;
+   byte i;
+   unsigned int ks=0;
    
-   ks+= Regs4[0] = read_eeprom_uchar(0);          // S/N
-   ks+= Regs4[1] = read_eeprom_uchar(1);          // номер линка
-   ks+= Regs4[2] = read_eeprom_uchar(2);          // поправка частоты
-   ks+= Regs4[3] = read_eeprom_uchar(3);          // разрешение статистики
+   for(i=0; i<sizeof(Regs4); i++)    ks+=Regs4[i] = read_eeprom_uchar(i);  // первые 5 регистров
+
    // hopping channels
    for(i=0; i<HOPE_NUM; i++)  ks+=hop_list[i] = read_eeprom_uchar(i+11);
   
    // Регистры управления мощностью (19-23): канал, мошность1 - мощность3.
-  for(i=0; i<sizeof(PowReg); i++)    ks+=PowReg[i] = read_eeprom_uchar(i+19);
-   // Регистры поддержки SAW фильтра (25,26) 
-//   ks+= SAWreg[0] = read_eeprom_uchar(25);  
-//   ks+= SAWreg[1] = read_eeprom_uchar(26);  
+   for(i=0; i<sizeof(PowReg); i++)    ks+=PowReg[i] = read_eeprom_uchar(i+19);
 
-//   i=read_eeprom_uchar(28);           // номер первого PWM в PPM режиме
-//   if(i>0 && i<=8) { pwm1chnl=i; ks+=i; }
-   
-// Регистры RSSI (40-41). Задают тип (биби/Вольты) и режим (уровень сигнала или отношение сигнал/шум)
-//   ks+= RSSIreg[0] = read_eeprom_uchar(40);  
-//   ks+= RSSIreg[1] = read_eeprom_uchar(41);  
+   if(read_eeprom_uint(EEPROM_KS_ADR) != ks) return false;            // Checksum error
 
-//   RSSIreg[2] = read_eeprom_uchar(42);  
-//   if(RSSIreg[2] < 1 || RSSIreg[2] > RC_CHANNEL_COUNT) RSSIreg[2]=0;             // 1 - RC_CHANNEL_COUNT, другое - не использовать
-//   ks+=RSSIreg[2];
-
-   if(read_eeprom_uint(EEPROM_KS_ADR) != ks) return 0;            // Checksum error
-
-   return 1;                                            // OK
+   return true;                                            // OK
 } 
 
 // Запись всех настроек
 void write_eeprom(void)
 {
-   unsigned int i, ks=0;
+   byte i;
+   unsigned int ks=0;
    
-   write_eeprom_uchar(0,Regs4[0]);     ks+=Regs4[0];      // S/N
-   write_eeprom_uchar(1,Regs4[1]);     ks+=Regs4[1];      // номер линка
-   write_eeprom_uchar(2,Regs4[2]);     ks+=Regs4[2];      // поправка частоты
-   write_eeprom_uchar(3,Regs4[3]);     ks+=Regs4[3];      // разрешение статистиуки
+   for(i=0; i<sizeof(Regs4); i++) {
+     write_eeprom_uchar(i,Regs4[i]);  
+     ks+=Regs4[i];  
+   }
 
    // hopping channels
    for(i=0; i<HOPE_NUM; i++) {
@@ -123,17 +109,6 @@ void write_eeprom(void)
      write_eeprom_uchar(i+19,PowReg[i]);  
      ks+=PowReg[i];  
    }
-   // Регистры поддержки SAW фильтра (25,26) 
-//   write_eeprom_uchar(25,SAWreg[0]);     ks+=SAWreg[0];  
-//   write_eeprom_uchar(26,SAWreg[1]);     ks+=SAWreg[1];  
-
-//   write_eeprom_uchar(28,pwm1chnl);      ks+=pwm1chnl;  // номер первого PWM в PPM режиме
-
-// Регистры RSSI (40-41). Задают тип (биби/Вольты) и режим (уровень сигнала или отношение сигнал/шум)
-//   write_eeprom_uchar(40,RSSIreg[0]);     ks+=RSSIreg[0];  
-//   write_eeprom_uchar(41,RSSIreg[1]);     ks+=RSSIreg[1];  
-//   write_eeprom_uchar(42,RSSIreg[2]);     ks+=RSSIreg[2];  
-
    write_eeprom_uint(EEPROM_KS_ADR,ks);        // Write checksum
 } 
 
@@ -143,14 +118,14 @@ void eeprom_check(void)              // читаем и проверяем на�
 
   if(flash_check()) {
       Serial.println("FLASH ERROR!!! Working unpredictable!");
-      Red_LED_Blink(120);  // долго мигаем красным, если КС не сошлась
+      Red_LED_Blink(59999);  // долго мигаем красным, если КС не сошлась
   }    
   
    if(!read_eeprom()) {
         Serial.println("Error read settings!");
-        Red_LED_Blink(120);  // мигаем красным, если КС не сошлась
-        write_eeprom(); 
-        Serial.println("Settings reset to defaults!");
+        Red_LED_Blink(59999);  // мигаем красным, если КС не сошлась
+//        write_eeprom(); 
+//        Serial.println("Settings reset to defaults!");
    }
 }  
 
