@@ -1,43 +1,30 @@
 // **********************************************************
-// **                   OpenLRS Functions                  **
-// **        Developed by Melih Karakelle on 2010-2011     **
-// **          This Source code licensed under GPL         **
+// Baychi soft 2013
+// **      RFM22B/23BP/Si4432 Transmitter with Expert protocol **
+// **      This Source code licensed under GPL            **
 // **********************************************************
-// Latest Code Update : 2013-08-17
-// Supported Hardware : Open Tiny LRS Rx boards (store.flytron.com)
-// Project Forum      : http://forum.flytron.com/viewforum.php?f=7
-// Google Code Page   : http://code.google.com/p/openlrs/
+// Latest Code Update : 2013-10-22
+// Supported Hardware : Expert Tiny, Orange/OpenLRS Tx/Rx boards (store.flytron.com)
+// Project page       : https://github.com/baychi/OpenExpertTX
+// **********************************************************
 
-
-
-void Red_LED_Blink(unsigned short blink_count)
+void Red_LED_Blink(unsigned short blink_count)  // на самом деле индикатор у нас только один :)
 {
-  unsigned char i;
+  word i;
   for (i=0;i<blink_count;i++)     {
      Sleep(125);
-     Red_LED_ON;
+     Green_LED_ON;
      Sleep(125);
-     Red_LED_OFF;
+     Green_LED_OFF;
+     if(blink_count > 50) {
+       if(checkMenu()) {
+         doMenu();
+         break;
+       }
+     }  
   }
 }
 
-
-// Преобразование данных входного буфера buf в длительности PWM
-/**********************
-void Buf_To_Servo(unsigned char buf[])
-{
-     unsigned int i;
-     int temp_int;
-
-     for(i = 0; i<RC_CHANNEL_COUNT; i++) { // Write into the Servo Buffer
-        temp_int = 4 * buf[i+2];
-        if(i<8) {                   // 2-й байт пакета содержит старшие биты 8-ми первых каналов 
-           if(buf[1]&(1<<i)) temp_int +=1024; 
-         } else temp_int +=temp_int;
-         Servo_Buffer[i] = temp_int+1990; // кодируем PWM в мкс*2
-      }
-}  
-*******************************/
 
 // Вычисление CRC8 по массиву данных
 //
