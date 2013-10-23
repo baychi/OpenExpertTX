@@ -1,11 +1,23 @@
+// **********************************************************
+// Baychi soft 2013
+// **      RFM22B/23BP/Si4432 Transmitter with Expert protocol **
+// **      This Source code licensed under GPL            **
+// **********************************************************
+// Latest Code Update : 2013-10-22
+// Supported Hardware : Expert Tiny, Orange/OpenLRS Tx/Rx boards (store.flytron.com)
+// Project page       : https://github.com/baychi/OpenExpertTX
+// **********************************************************
+
 
 // Функции меню терминала
 //
-static unsigned char regs[] = {1, 2, 3, 11,12,13,14,15,16,17,18,19,20,21,22 }; // ,23,24,25,26,28,40,41,42 } ;
+static unsigned char regs[] = {1, 2, 3, 4, 5, 11,12,13,14,15,16,17,18,19,20,21,22 }; // номера отображаемых регистров
 static char *help[] = {
   "Bind N",
   "Freq Corr",
   "Term corr enable",
+  "FS check enable",
+  "Debug output (1-PPMbuf, 2-performance)",
   "Hope F1",
   "Hope F2",
   "Hope F3",
@@ -18,14 +30,6 @@ static char *help[] = {
   "Power min (0-7)",  
   "Power middle (0-7)",
   "Power max (0-7)"
-//  "Beacon P4",
-//  "Beacon start time (sec)",
-//  "SAW Fmin",
-//  "SAW Fmax",
-//  "PPM mode 1st PWM chnl (1-8) [4]", 
-//  "RSSI type: sound(0)/level(1)",
-//  "RSSI mode: level(0)/SN ratio(1)",
-//  "RSSI over PWM (ch num:1-12) 0- not use"
 };  
   
 
@@ -51,7 +55,7 @@ bool checkMenu(void)   // проверка на вход в меню
    
    if (Serial.available() > 0) {
       in= Serial.read();             // все, что пришло, отображаем
-      if(in == 'c' || in == 'C') maxDif=0; // !!!!!!!
+      if(in == 'c' || in == 'C') mppmDif=maxDif=0; // !!!!!!!
       if(in == 'm' || in == 'M') return true; // есть вход в меню
    } 
    return false;                        // не дождались 
@@ -65,18 +69,12 @@ void getStr(char str[])             // получение строки, заве
   while(1) {
     wdt_reset();               //  поддержка сторожевого таймера
     if (Serial.available() > 0) {
-/*
-      if(Serial.peek() == SAT_PACK_HEADER) {  // если обнаружили заголовок от саттелита
-        str[0]='q'; str[1]=0;      // иммитируем Quit
-        menuFlag=0;              // запрещаем меню
-        return;
-      }
-*/      
        in= Serial.read();             // все, что пришло, отображаем
        if(in > 0) {
           Serial.write(in);
           if(in == 0xd || in == 0xa) {
             Serial.println("");
+            mppmDif=maxDif=0;           // !!!!!!!
             return;                     // нажали Enter
           }
           if(in == 8) {                 // backspace, удаляем последний символ
