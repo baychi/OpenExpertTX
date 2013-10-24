@@ -7,392 +7,141 @@
 // Supported Hardware : Expert Tiny, Orange/OpenLRS Tx/Rx boards (store.flytron.com)
 // Project page       : https://github.com/baychi/OpenExpertTX
 // **********************************************************
- 
-#define NOP() __asm__ __volatile__("nop") 
 
-// Режимы RFM для 7-го регистра
-#define RF22B_PWRSTATE_READY    01 
-#define RF22B_PWRSTATE_TX       0x09 
-#define RF22B_PWRSTATE_RX       05 
+#include "config.h"
+#include <EEPROM.h>
+#include <avr/wdt.h>
 
-// Режимы прерывания для 5-го регистра
-#define RF22B_Rx_packet_received_interrupt   0x02 
-#define RF22B_PACKET_SENT_INTERRUPT  04 
-#define RF22B_PWRSTATE_POWERDOWN  00 
+byte FSstate = 0;          // 1 = waiting timer, 2 = send FS, 3 sent waiting BUTTON release
+unsigned long FStime = 0;  // time when button went down...
+unsigned long lastSent = 0;
 
- 
-unsigned char ItStatus1, ItStatus2; 
+void checkFS(void)        // проверка нажатия кнопочки для отсылки FS кадра
+{
+  switch (FSstate) {
+  case 0:
+    if (!digitalRead(BUTTON)) {
+      FSstate = 1;
+      FStime = millis();
+    }
 
-unsigned char read_8bit_data(void); 
-// void to_tx_mode(void); 
-void to_ready_mode(void); 
-void send_8bit_data(unsigned char i); 
-void send_read_address(unsigned char i); 
-void _spi_write(unsigned char address, unsigned char data); 
-void RF22B_init_parameter(void); 
+    break;
 
-void port_init(void);   
-unsigned char _spi_read(unsigned char address); 
-void Write0( void ); 
-void Write1( void ); 
-void timer2_init(void); 
-void Write8bitcommand(unsigned char command); 
-void to_sleep_mode(void); 
- 
- 
-//***************************************************************************** 
+  case 1:
+    if (!digitalRead(BUTTON)) {
+      if ((millis() - FStime) > 500) {
+        FSstate = 2;
+        Green_LED_ON;
+      }
+    } else {
+      FSstate = 0;
+    }
+    break;
 
-//-------------------------------------------------------------- 
-void Write0( void ) 
-{ 
-    SCK_off;  
-    NOP(); 
-     
-    SDI_off; 
-    NOP(); 
-     
-    SCK_on;  
-    NOP(); 
-} 
-//-------------------------------------------------------------- 
-void Write1( void ) 
-{ 
-    SCK_off;
-    NOP(); 
-     
-    SDI_on;
-    NOP(); 
-     
-    SCK_on; 
-    NOP(); 
-} 
-//-------------------------------------------------------------- 
-void Write8bitcommand(unsigned char command)    // keep sel to low 
-{ 
- unsigned char n=8; 
-    nSEL_on;
-    SCK_off;
-    nSEL_off; 
-    while(n--) 
-    { 
-         if(command&0x80) 
-          Write1(); 
-         else 
-          Write0();    
-              command = command << 1; 
-    } 
-    SCK_off;
-}  
+  case 2:
+    if (digitalRead(BUTTON)) {
+      FSstate = 0;
+    } else {
+      Green_LED_ON;
+    }
 
-
-//-------------------------------------------------------------- 
-unsigned char _spi_read(unsigned char address) 
-{ 
- unsigned char result; 
- send_read_address(address); 
- result = read_8bit_data();  
- nSEL_on; 
- return(result); 
-}  
-
-//-------------------------------------------------------------- 
-void _spi_write(unsigned char address, unsigned char data) 
-{ 
- address |= 0x80; 
- Write8bitcommand(address); 
- send_8bit_data(data);  
- nSEL_on;
-}  
-
-
-//-------Defaults 7400 baud---------------------------------------------- 
-void RF22B_init_parameter(void) 
-{ 
-  ItStatus1 = _spi_read(0x03); // read status, clear interrupt   
-  ItStatus2 = _spi_read(0x04); 
-  
-  _spi_write(0x06, 0x00);    // no interrupt: no wakeup up, lbd, 
-  _spi_write(0x07, RF22B_PWRSTATE_READY);      // disable lbd, wakeup timer, use internal 32768,xton = 1; in ready mode 
-  if(Regs4[2]!=0)  _spi_write(0x09, Regs4[2]);     // точная подстройка частоты 
-  else _spi_write(0x09, 199);     // если сброшена, используем умолчание   
-  _spi_write(0x0a, 0x05);    // выход CLK 2 МГц ?
-  _spi_write(0x0b, 0x12);    // gpio0 TX State
-  _spi_write(0x0c, 0x15);    // gpio1 RX State 
-
-  _spi_write(0x0e, 0x00);    // gpio 0, 1,2 NO OTHER FUNCTION. 
-  
-// From Expert
-  _spi_write(0x1F, 0x03);    //  Clock recovery
-  _spi_write(0x1E, 0x0A);    //  AFC timing
-  _spi_write(0x12, 0x60);    //  Режим измерения температуры -40..+85 C
-  _spi_write(0x13, 0xF8);    //  Смещение температуры ?
-  _spi_write(0x0F, 0x80);    //  АЦП для измерения температуры
-  _spi_write(0x1D, 0x40);    //  AFC enable
-
-//--------------------------
-   
-  _spi_write(0x1c, 0x26);    // IF filter bandwidth
-  _spi_write(0x20, 0x44);    // clock recovery oversampling rate  
-  _spi_write(0x21, 0x00);    // 0x21 , rxosr[10--8] = 0; stalltr = (default), ccoff[19:16] = 0; 
-  _spi_write(0x22, 0xF2);    // 0x22   ncoff =5033 = 0x13a9 
-  _spi_write(0x23, 0x7C);    // 0x23 
-  _spi_write(0x24, 0x06);    // 0x24 
-  _spi_write(0x25, 0x7D);    // 0x25 clock recovery ...
-  _spi_write(0x2a, 0x0f);    // AFC limiter
-
-  _spi_write(0x30, 0xAC);    // Mode: enable packet handler, msb first, enable crc CCITT, 
-  _spi_write(0x32, 0x8C);    // Header: 0x32address enable for headere byte 0, 1,2,3, receive header check for byte 0, 1,2,3 
-  _spi_write(0x33, 0x0A);    // header 3, 2, 1,0 used for head length, fixed packet length, synchronize word length 3, 2, 
-  _spi_write(0x34, 0x04);    // 2 bytes preamble 
-  _spi_write(0x35, 0x22);    // expect full preamble 
-  _spi_write(0x36, 0x2d);    // synchronize word 3
-  _spi_write(0x37, 0xd4);    // 2
-  _spi_write(0x38, 0x00);    // 1
-  _spi_write(0x39, 0x00);    // 0
-
-  _spi_write(0x3e, RF_PACK_SIZE);    // total tx 16 byte 
-
-  _spi_write(0x6d, 0x08);    // 7 set power min TX power 
-// 7400 bps data rate
-  _spi_write(0x6e, 0x3C); //  RATE_7400 
-  _spi_write(0x6f, 0x9F); //   
-
-  _spi_write(0x69, 0x60);    //  AGC enable
-  _spi_write(0x70, 0x2E);    //  manchester enable!!!
-  _spi_write(0x79, 0x00);    // no hopping (1-st channel)
-  _spi_write(0x7a, HOPPING_STEP_SIZE);    // 60khz step size (10khz x value) // no hopping 
-
-  _spi_write(0x71, 0x23);  // Gfsk,  fd[8] =0, no invert for Tx/Rx data, fifo mode, txclk -->gpio 
-  _spi_write(0x72, 0x0E);  // frequency deviation setting to 8750
-
-  //band 434.075
- _spi_write(0x75, 0x53);   // 433075 кГц  
- _spi_write(0x76, 0x4C);    
- _spi_write(0x77, 0xE0); 
+    break;
+  }
 }
 
-
-//-------------------------------------------------------------- 
-void send_read_address(unsigned char i) 
-{ 
- i &= 0x7f; 
-  
- Write8bitcommand(i); 
-}  
-//-------------------------------------------------------------- 
-void send_8bit_data(unsigned char i) 
-{ 
-  unsigned char n = 8; 
-  SCK_off;
-    while(n--) 
-    { 
-         if(i&0x80) 
-          Write1(); 
-         else 
-          Write0();    
-         i = i << 1; 
-    } 
-   SCK_off;
-}  
-//-------------------------------------------------------------- 
-
-unsigned char read_8bit_data(void) 
-{ 
-  unsigned char Result, i; 
-  
- SCK_off;
- Result=0; 
-    for(i=0;i<8;i++) 
-    {                    //read fifo data byte 
-       Result=Result<<1; 
-       SCK_on;
-       NOP(); 
-       if(SDO_1) 
-       { 
-         Result|=1; 
-       } 
-       SCK_off;
-       NOP(); 
-     } 
-    return(Result); 
-}  
-//-------------------------------------------------------------- 
-
-//----------------------------------------------------------------------- 
-void rx_reset(void) 
-{ 
-  _spi_write(0x07, RF22B_PWRSTATE_READY); 
-  _spi_write(0x7e, 36);    // threshold for rx almost full, interrupt when 1 byte received 
-  ppmLoop(); 
-
-  _spi_write(0x08, 0x03);    // clear fifo disable multi packet 
-  _spi_write(0x08, 0x00);    // clear fifo, disable multi packet 
-  ppmLoop(); 
-
-  _spi_write(0x07, RF22B_PWRSTATE_RX );  // to rx mode 
-  _spi_write(0x05, RF22B_Rx_packet_received_interrupt); 
-  ppmLoop(); 
-
-  ItStatus1 = _spi_read(0x03);  //read the Interrupt Status1 register 
-  ItStatus2 = _spi_read(0x04);  
-}  
-//-----------------------------------------------------------------------    
-
-void to_rx_mode(void) 
-{  
-  to_ready_mode(); 
-  Sleep(50); 
-  rx_reset(); 
-}  
-
-word ppmCode(byte ch)                  // преобразование мкс PPM в 10 битный код
+void setup(void)
 {
-  word pwm=PPM[ch];                   // берем длительность импульса в мкс 
+   pinMode(SDO_pin, INPUT); //SDO
+   pinMode(SDI_pin, OUTPUT); //SDI        
+   pinMode(SCLK_pin, OUTPUT); //SCLK
+   pinMode(IRQ_pin, INPUT); //IRQ
+   pinMode(nSel_pin, OUTPUT); //nSEL
+     
+   pinMode(0, INPUT); // Serial Rx
+   pinMode(1, OUTPUT);// Serial Tx
+   digitalWrite(0, HIGH);
+   digitalWrite(1, HIGH);
 
-  if(pwm < 988) pwm=0;
-  else if(pwm > 2011) pwm=1023;
-  else pwm=pwm-988;
+  //LED and other interfaces
+   pinMode(RED_LED_pin, OUTPUT);   //RED LED
+   pinMode(GREEN_LED_pin, OUTPUT);   //GREEN LED
+   pinMode(BUTTON, INPUT);   //Buton
+   digitalWrite(BUTTON, HIGH);
 
-  return pwm;
-}  
+   pinMode(PPM_IN, INPUT);   //PPM from TX
+   digitalWrite(PPM_IN, HIGH); // enable pullup for TX:s with open collector output
 
-//-------------------------------------------------------------- 
-//
-#define ONE_BYTE_MKS 1055                 // временнной интервал между байтами при скорости 74000
+   Serial.begin(SERIAL_BAUD_RATE);
 
-void to_tx_mode(void)                  // Подготовка и отсылка пакета на лету
-{ 
-  byte i,j,k,l;
+  setupPPMinput();
+  EIMSK &=~1;          // запрещаем INT0 
+  RF22B_init_parameter();
+
+  sei();
+
+  Red_LED_ON;
+  delay(100);
+  for(byte i=0; i<RC_CHANNEL_COUNT; i++) PPM[i]=0;
+
+  Red_LED_OFF;
+  ppmAge = 255;
+  rx_reset();
+}
+
+void loop(void)        // главный фоновый цикл 
+{
+  byte i,j,k;
   word pwm;
-  unsigned long tx_start;
 
-  to_ready_mode();
- 
-  _spi_write(0x08, 0x03);    // disABLE AUTO TX MODE, enable multi packet clear fifo 
-  _spi_write(0x08, 0x00);   
-  
-// Управление мощностью
-//
-  if(PowReg[0] > 0 && PowReg[0] <= 12) { // если задан канал 1-12
-    cli();
-    pwm=PPM[PowReg[0]-1];                // берем длительность импульса
-    sei();
-    if(pwm < 1300) i=PowReg[1];         // и определяем, какую мощность требуют
-    else if(pwm >= 1700) i=PowReg[3];
-    else i=PowReg[2];
-  } else i=PowReg[1];
-  
-  i=i&7;
-  lastPower=i;                         
-  _spi_write(0x6d, i+8);                  // Вводим мощность в RFMку 
+  printHeader();
+  eeprom_check();      // Считываем и проверяем FLASH и настройки    
 
-//  ppmLoop(); 
-  _spi_write(0x7f,(RF_Tx_Buffer[0]=Regs4[1]));       // отсылаем номер линка в FIFO
-  _spi_write(0x05, RF22B_PACKET_SENT_INTERRUPT);     // переводим 
-//  ppmLoop(); 
+  wdt_enable(WDTO_1S);     // запускаем сторожевой таймер 
+  mppmDif=maxDif=0;   // !!!!!!!
+  unsigned long time = micros();
+  lastSent=time; 
 
-  ItStatus1 = _spi_read(0x03);         //  read the Interrupt Status1 register 
-  ItStatus2 = _spi_read(0x04); 
-
-  while((micros() - lastSent) < 31350) ppmLoop(1);   // точная предварительная подгонка старта
-//  while((micros() - lastSent) < 31300);             // точная окончательная подгонка старта
-  _spi_write(0x07, RF22B_PWRSTATE_TX);              // старт передачи
-  lastSent += 31500;                                // формируем момент следующей отправки пакета
-
-// Цикл формирования и отсылки данных на лету
-  tx_start=micros();
-  i=1;  // первый байт мы уже отослали         
-
-  while(nIRQ_1 && ((micros()-tx_start)<34999)) {  // ждем окончания, но не бесконечно
+  while(1) {
     ppmLoop();
-
-    if((i<RF_PACK_SIZE) && (micros()-tx_start) > (i+2)*ONE_BYTE_MKS) {   // ждем пока не подойдет реальное время отправки (запас 1 байт)
-        if(i == 1) {                                 // формируем байт старших бит и делаем предварительную подготовку пакета
-          for(l=j=k=0; l<8; l++) {                   
-            if(ppmCode(l) >= 512) j |= 1<<l;         // байт старших бит
-            RF_Tx_Buffer[l+2]=(pwm>>1)&255;          // 8 средних бит первых 8 каналов
-            if(l<7 && (pwm&1)) k |= (2<<l);          // байт младших бит (10 бит кодирование в упр. байте)
-          }
-          _spi_write(0x7f,(RF_Tx_Buffer[1]=j));      // отсылаем байт старших бит
-          RF_Tx_Buffer[RC_CHANNEL_COUNT+3]=k;       // запоминаем младшие биты
-        } else if(i < RF_PACK_SIZE-2) {              // отправляем основные байты данных
-           pwm=ppmCode(i-2);
-           if(i < 10) {                              // для первых 8 байт нужна особая обработка, учитывая что байт старших бит
-             k=1<<(i-2); j=0;                        // уже отправлен и его не изменить.
-             if(pwm >= 512) j=k;
-             if((RF_Tx_Buffer[1]&k) == j) {          // если бит совпадает, с прежним, можно кодировать средние биты
-                RF_Tx_Buffer[i]=(pwm>>1)&255;        // 8 младших бит первых 8 каналов
-                if(i < 9) {
-                  k=k+k;                             // маска младшего бита
-                  if(pwm&1) RF_Tx_Buffer[RC_CHANNEL_COUNT+3] |= k;       // и не забываем уточнять младшие биты 
-                  else RF_Tx_Buffer[RC_CHANNEL_COUNT+3] &= ~k;           // первых 7 ми каналов в управляющем байте 
-                }
-             }     
-          } else RF_Tx_Buffer[i]=(pwm>>2)&255;        // остальные каналы просто формируем на лету
-          _spi_write(0x7f,RF_Tx_Buffer[i]);           // отсылаем очередной байт
-        } else if(i == RF_PACK_SIZE-2) {
-          RF_Tx_Buffer[RC_CHANNEL_COUNT+2] = CRC8(RF_Tx_Buffer+2, RC_CHANNEL_COUNT); // формируем СRC8
-          _spi_write(0x7f,RF_Tx_Buffer[RC_CHANNEL_COUNT+2]);  // и отсылаем ее
-        } else {
-          if(FSstate == 2) RF_Tx_Buffer[RC_CHANNEL_COUNT+3]=0x01; // Нажатие кнопки == команде установки FS 
-          _spi_write(0x7f,RF_Tx_Buffer[RC_CHANNEL_COUNT+3]);  // отсылаем последний, управляющий байт (или байт 10-х бит)
-        } 
-        i++;                                       // продвигаемся в буфере
+    wdt_reset();               // поддержка сторожевого таймера
+    if(checkMenu()) {
+       doMenu(); 
+       lastSent=micros(); 
     }
-  }
-
-  if(nIRQ_1) {                                     // Если не дождались отсылки
-    Serial.println("TX timeout!");
-  }
-
-  to_ready_mode();
-}  
-
-//-------------------------------------------------------------- 
-void to_ready_mode(void) 
-{ 
-  ItStatus1 = _spi_read(0x03);   
-  ItStatus2 = _spi_read(0x04); 
-  ppmLoop(); 
-  _spi_write(0x07, RF22B_PWRSTATE_READY); 
-}  
-
-//-------------------------------------------------------------- 
-void to_sleep_mode(void) 
-{ 
-  _spi_write(0x07, RF22B_PWRSTATE_READY);  
-   
-  ItStatus1 = _spi_read(0x03);  //read the Interrupt Status1 register 
-  ppmLoop(); 
-  ItStatus2 = _spi_read(0x04);    
-  _spi_write(0x07, RF22B_PWRSTATE_POWERDOWN); 
-
-} 
-
-//############# FREQUENCY HOPPING FUNCTIONS #################
-void Hopping(void)
-{
-    unsigned char hn;
     
-    hn=Regs4[2]; 
-    if(hn!=0) {                 // если разрешена точная подстройка
-      if(Regs4[3]) hn-=-freqCorr; // дополнительно учитываем поправку температуры
-      _spi_write(0x09, hn);     // точная подстройка частоты 
-      ppmLoop();
+    if (_spi_read(0x0C) == 0) {     // detect the locked module and reboot
+      Serial.println("RFM locked?");
+      Green_LED_ON;
+      RF22B_init_parameter();
+      rx_reset();
+      mppmDif=maxDif=0; // !!!!!!!
+      continue;      
     }
-    hopping_channel++;
-    if (hopping_channel>=HOPE_NUM) hopping_channel = 0;
-    hn=hop_list[hopping_channel];
-    _spi_write(0x79, hn);
-}
 
-// Получение температуры и температурная коррекция кварца
-void getTemper (void)
-{
-   _spi_write(0x0f, 0x80);               // запускаем измерение температуры 
-   Sleep(2);                             
-   curTemperature=_spi_read(0x11)-0x40;  // читаем температуру из АЦП
-   if(curTemperature < 20) freqCorr=(curTemperature-30)/10;            // область холода
-   else if(curTemperature > 35) freqCorr=(curTemperature-35)/5;        // область жары
-   ppmLoop();
-}  
+    ppmLoop();
+    time = micros();
+    i=checkPPM();                   // Проверяем PPM на запрет передачи      
+    if(i && ppmAge < 7) {
+      checkFS();                               // отслеживаем нажатие кнопочки
+      pwm=time - lastSent;                       //  проверяем не пора ли готовить отправку
+      if(pwm >= 28999) {
+        if(pwm > 32999) lastSent=time-31500;     // при слишком больших разбежках поправим время отправки
+        Hopping();
+        to_tx_mode();                          // формируем и посылаем пакет
+        getTemper();                           // меряем темперартуру
+        ppmAge++;
+        showState();                           // отображаем режим и дебуг информацию 
+      }
+    } else if(ppmAge == 255) {
+       getTemper();                            // меряем темперартуру
+       showState(); 
+       Sleep(249);
+    } else if(ppmAge > 5 || i == 0) {
+       to_sleep_mode();                        // нет PPM - нет и передачи
+       getTemper();                            // меряем темперартуру
+       showState(); 
+       Sleep(249);
+    }
+  }  
+  
+}
