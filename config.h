@@ -7,7 +7,7 @@
 
 // Версия и номер компиляции. Используется для проверки целостности программы
 // При модификации программы необходимо изменить одно из этих чисел 
-unsigned char version[] = { 2, 7 };
+unsigned char version[] = { 2, 4 };
 
 // Время для входа в меню
 #define MENU_WAIT_TIME 9999
@@ -189,8 +189,9 @@ unsigned int maxDif=0;               // для контроля загружен
 void RF22B_init_parameter(void);
 unsigned char _spi_read(unsigned char address); 
 void to_sleep_mode(void);
-void ppmLoop(unsigned char n=8);
+void ppmLoop(unsigned char n=12);
 extern unsigned int mppmDif,maxDif;
-extern unsigned int PPM[RC_CHANNEL_COUNT];     // текущие длительности канальных импульсов
+extern unsigned int PPM[RC_CHANNEL_COUNT+2];     // текущие длительности канальных импульсов
 extern unsigned char ppmAge; // age of PPM data
+void printlnPGM(char *adr, char ln=1);   // печать строки из памяти программы ln - перевод строки
 
