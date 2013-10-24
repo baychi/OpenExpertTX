@@ -12,12 +12,13 @@
 // Функции меню терминала
 //
 static unsigned char regs[] = {1, 2, 3, 4, 5, 11,12,13,14,15,16,17,18,19,20,21,22 }; // номера отображаемых регистров
-static char *help[] = {
+
+static char help[][32] PROGMEM = {
   "Bind N",
-  "Freq Corr",
+  "Freq correction const",
   "Term corr enable",
   "FS check enable",
-  "Debug output (1-PPMbuf, 2-performance)",
+  "Debug out (1-PPM, 2-perf.)",
   "Hope F1",
   "Hope F2",
   "Hope F3",
@@ -26,23 +27,45 @@ static char *help[] = {
   "Hope F6",
   "Hope F7",
   "Hope F8",
-  "Power switch chan (1-12) 0=off )",
+  "Power switch chan (1-13,0=off)",
   "Power min (0-7)",  
   "Power middle (0-7)",
   "Power max (0-7)"
 };  
   
+char htxt1[] PROGMEM = "\r\nBaychi soft 2013";
+char htxt2[] PROGMEM = "Press 'm' to start MENU";
+char htxt3[] PROGMEM = "TX Open Expert V2 F";
+void printHeader(void)
+{
+  printlnPGM(htxt1);
+  printlnPGM(htxt2,0); Serial.println(version[0]);
+  printlnPGM(htxt3);
+}  
+
+void printlnPGM(char *adr, char ln)   // печать строки из памяти программы
+{
+  byte b;
+  while(1) {
+    b=pgm_read_byte(adr++);
+    if(!b) break;
+    Serial.write(b);
+  }
+
+  if(ln) Serial.println();  
+}
 
 void showRegs(void)         // показать значения регистров
 {
-  unsigned char i,j=0;
+  unsigned char i,j=0,k;
+  
   for(int i=1; i<=REGS_NUM; i++) {
     if(regs[j] == i) {
       Serial.print(i);
-      Serial.print("=");
+      Serial.write('=');
       Serial.print(read_eeprom_uchar(i));
-      Serial.print("\t");
-      Serial.println(help[j]);
+      Serial.write('\t');
+      printlnPGM(help[j]);   // читаем строки из программной памяти
       j++;
     }
   }
@@ -55,7 +78,7 @@ bool checkMenu(void)   // проверка на вход в меню
    
    if (Serial.available() > 0) {
       in= Serial.read();             // все, что пришло, отображаем
-      if(in == 'c' || in == 'C') mppmDif=maxDif=0; // !!!!!!!
+      if(in == 'c' || in == 'C') mppmDif=maxDif=0; // сброс статистики загрузки
       if(in == 'm' || in == 'M') return true; // есть вход в меню
    } 
    return false;                        // не дождались 
@@ -73,8 +96,7 @@ void getStr(char str[])             // получение строки, заве
        if(in > 0) {
           Serial.write(in);
           if(in == 0xd || in == 0xa) {
-            Serial.println("");
-            mppmDif=maxDif=0;           // !!!!!!!
+            Serial.println();
             return;                     // нажали Enter
           }
           if(in == 8) {                 // backspace, удаляем последний символ
@@ -100,13 +122,14 @@ byte margin(byte v)
 void print3(unsigned char val)  // печать 3-цифр с выравниваем пробелами
 {
   if(val < 10) Serial.print("  ");
-  else if(val <100) Serial.print(" ");
+  else if(val <100) Serial.write(' ');
   Serial.print(val);
-  Serial.print(" ");
+  Serial.write(' ');
 }  
 
 byte _spi_read(byte address); 
 void _spi_write(byte address,byte val); 
+char ntxt1[] PROGMEM = "FHn: Min Avr Max";
 
 void showNoise(char str[])             // отображаем уровень шумов по каналам
 {
@@ -131,8 +154,8 @@ void showNoise(char str[])             // отображаем уровень ш
   RF22B_init_parameter();      // подготовим RFMку 
   to_rx_mode(); 
  
-  Serial.println("FHn: Min Avr Max");
-  
+  printlnPGM(ntxt1);
+ 
   for(i=fBeg; i<=fMax; i++) {    // цикл по каналам
      _spi_write(0x79, i);       // ставим канал
      delayMicroseconds(749);
@@ -145,7 +168,7 @@ void showNoise(char str[])             // отображаем уровень ш
        if(k>rMax) rMax=k;
      }
      if(i < 10) Serial.print("  ");
-     else if(i <100) Serial.print(" ");
+     else if(i <100) Serial.write(' ');
      Serial.print(i);
      k=':';
      for(j=0; j<HOPE_NUM; j++) {   // отметим свои частоты
@@ -153,7 +176,7 @@ void showNoise(char str[])             // отображаем уровень ш
           k='#';
         }
      }
-     Serial.write(k); Serial.print(" ");
+     Serial.write(k); Serial.write(' ');
      print3(rMin);   
      k=rAvr/R_AVR;  print3(k);
      print3(rMax);
@@ -164,11 +187,11 @@ void showNoise(char str[])             // отображаем уровень ш
        k=margin(k); 
 
        for(j=0; j<=rMax; j++) {                         // нарисуем псевдографик
-         if(j == k) Serial.print("*");
-         else if(j == rMin) Serial.print("<");
-         else if(j == rMax) Serial.print(">");
-         else if(j>rMin && j <rMax) Serial.print(".");
-         else Serial.print(" ");
+         if(j == k) Serial.write('*');
+         else if(j == rMin) Serial.write('<');
+         else if(j == rMax) Serial.write('>');
+         else if(j>rMin && j <rMax) Serial.write('.');
+         else Serial.write(' ');
        }
      }
      
@@ -177,18 +200,23 @@ void showNoise(char str[])             // отображаем уровень ш
   }
 }
 
+// Перенесем текст меню в память программ
+char mtxt1[] PROGMEM = "To Enter MENU Press ENTER";
+char mtxt2[] PROGMEM = "Type Reg and press ENTER, type Value and press ENTER (q=Quit; Nx-y = Show noise)";
+char mtxt3[] PROGMEM = "Rg=Val \tComments -----------------------";
+
 void doMenu()                       // работаем с меню
 {
   char str[8];
   int reg,val;
-  Serial.println("To Enter MENU Press ENTER");
+  printlnPGM(mtxt1);
   getStr(str);
   if(str[0] == 'q' || str[0] == 'Q') return;     // Q - то quit
   
   while(1) {
-    Serial.println("Rg=Val \tComments -----------------");
+    printlnPGM(mtxt3);
     showRegs();
-    Serial.println("Type Reg and press ENTER, type Value and press ENTER (q=Quit; Nx-y = Show noise)");
+    printlnPGM(mtxt2);
 
 rep:  
     getStr(str);
@@ -207,7 +235,7 @@ rep:
     if(val<0 || val>255) continue; 
     if(reg == 0 && val ==0) continue;              // избегаем потери s/n
 
-    Serial.print(reg); Serial.print("=");   Serial.println(val);  // Отобразим полученное
+    Serial.print(reg); Serial.write('=');   Serial.println(val);  // Отобразим полученное
     
      write_eeprom_uchar(reg,val);  // пишем регистр
      read_eeprom();                // читаем из EEPROM    
