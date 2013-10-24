@@ -20,7 +20,6 @@
 #define RF22B_PACKET_SENT_INTERRUPT  04 
 #define RF22B_PWRSTATE_POWERDOWN  00 
 
- 
 unsigned char ItStatus1, ItStatus2; 
 
 unsigned char read_8bit_data(void); 
@@ -75,11 +74,9 @@ void Write8bitcommand(unsigned char command)    // keep sel to low
     nSEL_off; 
     while(n--) 
     { 
-         if(command&0x80) 
-          Write1(); 
-         else 
-          Write0();    
-              command = command << 1; 
+         if(command&0x80)    Write1(); 
+         else  Write0();    
+         command = command << 1; 
     } 
     SCK_off;
 }  
@@ -273,7 +270,7 @@ void to_tx_mode(void)                  // Подготовка и отсылка
   
 // Управление мощностью
 //
-  if(PowReg[0] > 0 && PowReg[0] <= 12) { // если задан канал 1-12
+  if(PowReg[0] > 0 && PowReg[0] <= 13) { // если задан канал 1-12
     cli();
     pwm=PPM[PowReg[0]-1];                // берем длительность импульса
     sei();
@@ -283,7 +280,10 @@ void to_tx_mode(void)                  // Подготовка и отсылка
   } else i=PowReg[1];
   
   i=i&7;
-  lastPower=i;                         
+  if(++lastPower > (8-i)*3) {
+    lastPower=0;                        // мигаем с частотой пропорциональной мощности
+     Green_LED_ON;
+  }
   _spi_write(0x6d, i+8);                  // Вводим мощность в RFMку 
 
 //  ppmLoop(); 
@@ -343,6 +343,8 @@ void to_tx_mode(void)                  // Подготовка и отсылка
 
   if(nIRQ_1) {                                     // Если не дождались отсылки
     Serial.println("TX timeout!");
+  } else {
+    Green_LED_OFF;
   }
 
   to_ready_mode();
