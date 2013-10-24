@@ -112,20 +112,20 @@ void write_eeprom(void)
    write_eeprom_uint(EEPROM_KS_ADR,ks);        // Write checksum
 } 
 
+char etxt1[] PROGMEM = "FLASH ERROR!!! Can't work!";
+char etxt2[] PROGMEM = "Error read settings!";
 
 void eeprom_check(void)              // читаем и проверяем настройки из EEPROM, а также целостность программы
 {
 
   if(flash_check()) {
-      Serial.println("FLASH ERROR!!! Working unpredictable!");
+      printlnPGM(etxt1);
       Red_LED_Blink(59999);  // долго мигаем красным, если КС не сошлась
   }    
   
    if(!read_eeprom()) {
-        Serial.println("Error read settings!");
+        printlnPGM(etxt2);
         Red_LED_Blink(59999);  // мигаем красным, если КС не сошлась
-//        write_eeprom(); 
-//        Serial.println("Settings reset to defaults!");
    }
 }  
 
