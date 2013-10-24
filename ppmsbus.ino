@@ -268,7 +268,9 @@ bool checkTemp(void)            // проверяем, нужно ли отоб�
   return false;
 }
 
-bool showState(void)   // Отображение состояния после отправки пакета 
+byte showStage = 0;    // что-бы не напрягать проц, делаем все по частям
+
+void showState(void)   // Отображение состояния после отправки пакета 
 {
   byte i; 
   if(maxDif > 3999) maxDif=0;      // обнуляем очевидное
@@ -279,7 +281,12 @@ bool showState(void)   // Отображение состояния после �
      prevTemp=curTemperature;
      prevMode = ppmAge;
      prevLat = mppmDif;
+     
+     showStage =1;
+  }   
 
+  switch(showStage) {
+  case 1:                       // вывод состояния
      Serial.print("\r");
      if(ppmAge == 255) Serial.print("Waiting start:");
      else if(ppmAge > 5) Serial.print("Input lost:");
@@ -298,14 +305,21 @@ bool showState(void)   // Отображение состояния после �
        }
      }
      ppmLoop();
+     showStage=2;
+     break;
+
+ case 2:                            // температура и ее поправка
      Serial.print(" T=");  Serial.print((int)prevTemp);  // температура
      Serial.print(" Tc=");  Serial.print((int)freqCorr);  // поправка частоты
      ppmLoop();
+     showStage=3;
+     break;
      
+ case 3: 
      if(Regs4[5]&2) {           // если требуется доп. информация
-       Serial.print(" A=");  Serial.print(avrLoop>>5); // средняя длительность цикла
-       ppmLoop();
        Serial.print(" M=");  Serial.print(prevDif);    // макс длительность цикла
+       ppmLoop();
+       Serial.print(" A=");  Serial.print(avrLoop>>5); // средняя длительность цикла
        ppmLoop();
        if(ppmMicroPPM == 255) {      // в режиме SBus 
          Serial.print(" B=");  Serial.print(prevLat);  // макс. запаздывание
@@ -314,26 +328,29 @@ bool showState(void)   // Отображение состояния после �
          ppmLoop();
        }
      }
+     showStage=4;
+     break;
 
+  case 4:
      if(Regs4[5]&1) {        // если включен вывод PPM импульсов
        for(i=0; i<8; i++) { Serial.print("    "); ppmLoop(6); }             // подчистим грязь
      }
      Serial.println();  
-     
-     showNum=0;
-     return true;
-  } 
-  
-  if((Regs4[5]&1) && nchan >2) {
-    Serial.print(PPM[showNum]);
-    ppmLoop();
-    Serial.write(' ');
-    if(++showNum >= nchan) {
-       Serial.write('\r');
-       showNum=0;
-    }
+     showStage=showNum=0;
+     break;
+    
+  case 0:                   // стадия вывода PPM импульсов, в свою очеред состоит из nchan стадий 
+     if((Regs4[5]&1) && nchan >2) {
+       Serial.print(PPM[showNum]);
+       ppmLoop();
+       Serial.write(' ');
+       if(++showNum >= nchan) {
+         Serial.write('\r');
+         showNum=0;
+       }
+     }
+     break;
   }
-  return false;
 }
 
 bool checkPPM(void)         // проверка PPM/SBUS на failSafe ретранслятора
