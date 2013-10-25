@@ -342,7 +342,7 @@ void to_tx_mode(void)                  // Подготовка и отсылка
   }
 
   if(nIRQ_1) {                                     // Если не дождались отсылки
-    Serial.println("TX timeout!");
+    Serial.println("Timeout!");
   } else {
     Green_LED_OFF;
   }
@@ -396,5 +396,6 @@ void getTemper (void)
    curTemperature=_spi_read(0x11)-0x40;  // читаем температуру из АЦП
    if(curTemperature < 20) freqCorr=(curTemperature-30)/10;            // область холода
    else if(curTemperature > 35) freqCorr=(curTemperature-35)/5;        // область жары
+   else freqCorr=0;
    ppmLoop();
 }  
