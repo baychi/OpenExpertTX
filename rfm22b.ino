@@ -113,8 +113,14 @@ void RF22B_init_parameter(void)
   if(Regs4[2]!=0)  _spi_write(0x09, Regs4[2]);     // точная подстройка частоты 
   else _spi_write(0x09, 199);     // если сброшена, используем умолчание   
   _spi_write(0x0a, 0x05);    // выход CLK 2 МГц ?
-  _spi_write(0x0b, 0x12);    // gpio0 TX State
-  _spi_write(0x0c, 0x15);    // gpio1 RX State 
+
+#if(TX_BOARD_TYPE==4)         // в Навке почему-то извратились
+   _spi_write(0x0b, 0x15);    // gpio0 TX State
+   _spi_write(0x0c, 0x12);    // gpio1 RX State 
+#else 
+   _spi_write(0x0b, 0x12);    // gpio0 TX State
+   _spi_write(0x0c, 0x15);    // gpio1 RX State 
+#endif
 
   _spi_write(0x0e, 0x00);    // gpio 0, 1,2 NO OTHER FUNCTION. 
   
