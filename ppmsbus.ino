@@ -50,7 +50,7 @@ static void processPulse(word pulse)
     } else {
       if (pulse<100)                              // импульсы короче 50 мкс трактуем, как SBUS
         ppmSBUS++;                           
-      else if (pulse<1500)                        // импульсы короче 750 мкс трактуем, как Футабские
+      else if (pulse<1600)                        // импульсы короче 800 мкс трактуем, как Футабские
         ppmMicroPPM++;
 
       ppmDetecting++;
