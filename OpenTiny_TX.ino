@@ -98,6 +98,10 @@ void loop(void)        // главный фоновый цикл
 
   wdt_enable(WDTO_1S);     // запускаем сторожевой таймер 
   mppmDif=maxDif=0;   // !!!!!!!
+  getTemper();                           // меряем темперартуру
+  rx_reset();
+  Sleep(99);
+
   unsigned long time = micros();
   lastSent=time; 
 
@@ -110,11 +114,12 @@ void loop(void)        // главный фоновый цикл
     }
     
     if (_spi_read(0x0C) == 0) {     // detect the locked module and reboot
-      Serial.println("RFM locked?");
+      Serial.println("RFM lock?");
       Green_LED_ON;
       RF22B_init_parameter();
       rx_reset();
       mppmDif=maxDif=0; // !!!!!!!
+      Sleep(249);
       continue;      
     }
 
@@ -135,12 +140,12 @@ void loop(void)        // главный фоновый цикл
     } else if(ppmAge == 255) {
        getTemper();                            // меряем темперартуру
        showState(); 
-       Sleep(249);
+       Sleep(99);
     } else if(ppmAge > 5 || i == 0) {
        to_sleep_mode();                        // нет PPM - нет и передачи
        getTemper();                            // меряем темперартуру
        showState(); 
-       Sleep(249);
+       Sleep(99);
     }
   }  
   
