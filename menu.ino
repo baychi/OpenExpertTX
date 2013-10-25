@@ -41,6 +41,8 @@ void printHeader(void)
   printlnPGM(htxt1);
   printlnPGM(htxt2,0); Serial.println(version[0]);
   printlnPGM(htxt3);
+
+  showRegs();
 }  
 
 void printlnPGM(char *adr, char ln)   // печать строки из памяти программы
