@@ -34,8 +34,8 @@ static char help[][32] PROGMEM = {
 };  
   
 char htxt1[] PROGMEM = "\r\nBaychi soft 2013";
-char htxt2[] PROGMEM = "Press 'm' to start MENU";
-char htxt3[] PROGMEM = "TX Open Expert V2 F";
+char htxt2[] PROGMEM = "TX Open Expert V2 F";
+char htxt3[] PROGMEM = "Press 'm' to start MENU";
 void printHeader(void)
 {
   printlnPGM(htxt1);
