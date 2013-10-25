@@ -7,7 +7,7 @@
 
 // Версия и номер компиляции. Используется для проверки целостности программы
 // При модификации программы необходимо изменить одно из этих чисел 
-unsigned char version[] = { 2, 4 };
+unsigned char version[] = { 2, 1 };
 
 // Время для входа в меню
 #define MENU_WAIT_TIME 9999
@@ -26,7 +26,7 @@ static unsigned char hop_list[HOPE_NUM] = {77,147,89,167,109,189,127,209};   // 
 
 // Четыре первых регистра настроек (S/N, номер Bind, поправка частоты, разрешение коррекции частоты и детектирования FS ретранслятора
 static unsigned char Regs4[6] = {99 ,72, 204, 1, 0, 0 };    // последний бай - уровень отладки
-// Регистры управления мощностью (19-23): канал, мошность1 - мощность3 (0-7).
+// Регистры управления мощносью (19-23): канал, мошность1 - мощность3 (0-7).
 static unsigned char  PowReg[4] =  { 8, 0, 2, 7 };  
 
 //###### SERIAL PORT SPEED #######
@@ -58,7 +58,7 @@ unsigned int maxDif=0;               // для контроля загружен
 // 2 = RX Open/orange v2 Board in TX mode (PPM input on D3 chdnnel (5-th slot)
 // 3 = TX Open/orange v2 Board
 
-#define TX_BOARD_TYPE 2
+#define TX_BOARD_TYPE 1
 
 #if (TX_BOARD_TYPE == 1)           // Expert Tiny module
     //## RFM22BP Pinouts for Tx Tiny Board
@@ -70,7 +70,7 @@ unsigned int maxDif=0;               // для контроля загружен
     #define IRQ_interrupt 0
     #define PPM_IN 8
     #define USE_ICP1 // Use ICP1 in input capture mode
-    #define BUTTON 6
+    #define BUTTON 5
         
     #define  nIRQ_1 (PIND & 0x80)==0x80 //D7
     #define  nIRQ_0 (PIND & 0x80)==0x00 //D7
@@ -88,14 +88,14 @@ unsigned int maxDif=0;               // для контроля загружен
     #define  SDO_0 (PINB & 0x10) == 0x00 //B4
 
     //#### Other interface pinouts ###
-    #define GREEN_LED_pin 5
-    #define RED_LED_pin 4
+    #define GREEN_LED_pin 6
+    #define RED_LED_pin 6
     
-    #define Red_LED_ON   PORTD |= _BV(5);  
-    #define Red_LED_OFF  PORTD &= ~_BV(5); 
+    #define Red_LED_ON   PORTD |= _BV(6);  
+    #define Red_LED_OFF  PORTD &= ~_BV(6); 
     
-    #define Green_LED_ON  PORTD = PORTC;  // фиктивно
-    #define Green_LED_OFF PORTD = PORTC;    
+    #define Green_LED_ON  PORTD |= _BV(6); // проецируем
+    #define Green_LED_OFF PORTD &= ~_BV(6);    
 
     #define Serial_PPM_IN PORTB |= _BV(0) //Serial PPM IN
 #endif
@@ -142,6 +142,49 @@ unsigned int maxDif=0;               // для контроля загружен
 #endif
 
 #if (TX_BOARD_TYPE == 3)              // Orange transmitter  через прерывания
+      //### PINOUTS OF OpenLRS Rx V2 Board
+      #define SDO_pin 9
+      #define SDI_pin 8        
+      #define SCLK_pin 7 
+      #define IRQ_pin 2
+      #define nSel_pin 4
+      #define IRQ_interrupt 0
+      
+      #define PPM_IN 3
+      #define BUTTON 11
+
+      #define  nIRQ_1 (PIND & 0x04)==0x04 //D2
+      #define  nIRQ_0 (PIND & 0x04)==0x00 //D2
+      
+      #define  nSEL_on PORTD |= 0x10 //D4
+      #define  nSEL_off PORTD &= 0xEF //D4
+      
+      #define  SCK_on PORTD |= 0x80 // D7
+      #define  SCK_off PORTD &= 0x7F //D7
+      
+      #define  SDI_on PORTB |= 0x01 //B0
+      #define  SDI_off PORTB &= 0xFE //B0
+      
+      #define  SDO_1 (PINB & 0x02) == 0x02 //B1
+      #define  SDO_0 (PINB & 0x02) == 0x00 //B1
+      
+
+      //#### Other interface pinouts ###
+      #define GREEN_LED_pin 13
+      #define RED_LED_pin 12
+    
+      #define Red_LED_ON  PORTB |= _BV(4);
+      #define Red_LED_OFF  PORTB &= ~_BV(4);
+      
+      #define Green_LED_ON  PORTB |= _BV(5);
+      #define Green_LED_OFF  PORTB &= ~_BV(5);
+
+     #define PPM_Pin_Interrupt_Setup  PCMSK2 = 0x08;PCICR|=(1<<PCIE2);
+     #define PPM_Signal_Interrupt PCINT2_vect
+     
+#endif
+
+#if (TX_BOARD_TYPE == 4)              // Orange reciever тест через прерывания D3
       //### PINOUTS OF OpenLRS Rx V2 Board
       #define SDO_pin A0
       #define SDI_pin A1        
