@@ -8,17 +8,12 @@
 // Project page       : https://github.com/baychi/OpenExpertTX
 // **********************************************************
 
-#define REGS_EERPON_ADR 17     /* first byte of eeprom */
-#define FS_EEPROM_ADR   64     /* address of FS settings   */
-#define STAT_EPROM_ADR  88     /* начальный адрес статистики в EEPROM */
-unsigned int LAST_EEPROM_ADR=1024;   /* последний адрес статистики в EEPROM для ATMEGA328 = 35*26 байт*/
+#define REGS_EERPON_ADR  4     /* first byte of eeprom */
 
 #define FLASH_SIZE 16384         /* размер контроллируемой памяти программ */
-#define FLASH_SIGN_ADR 6         /* адрес сигнатуры прошивки в EEPROM */
-#define FLASH_KS_ADR 8           /* адрес контрольной суммы прошивки в EEPROM */
-#define EEPROM_KS_ADR 10         /* адрес контрольной суммы настроек в EEPROM */
-#define STAT_PTR_ADR 12          /* адрес указателя на очередную запись статистики в EEPROM */
-#define STAT_FLIGHT_ADR 14       /* адрес номера полета в EEPROM */ 
+#define FLASH_SIGN_ADR 64         /* адрес сигнатуры прошивки в EEPROM */
+#define FLASH_KS_ADR 66           /* адрес контрольной суммы прошивки в EEPROM */
+#define EEPROM_KS_ADR 68          /* адрес контрольной суммы настроек в EEPROM */
 
 
 unsigned int read_eeprom_uint(int address)
