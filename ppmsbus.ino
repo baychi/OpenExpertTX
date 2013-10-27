@@ -269,26 +269,29 @@ bool checkTemp(void)            // проверяем, нужно ли отоб�
 }
 
 byte showStage = 0;    // что-бы не напрягать проц, делаем все по частям
+byte prevFS,FSdetect = 0;     // Признак отключения выхода по FS ретранслятора
 
 void showState(void)   // Отображение состояния после отправки пакета 
 {
   byte i; 
   if(maxDif > 3999) maxDif=0;      // обнуляем очевидное
   
-  if(checkTemp() || prevErr != eCntr2 ||  prevMode != ppmAge || prevDif != maxDif || prevLat != mppmDif) {
+  if(checkTemp() || prevErr != eCntr2 ||  prevMode != ppmAge || prevDif != maxDif || prevLat != mppmDif || FSdetect != prevFS) {
      prevDif=maxDif;
      prevErr=eCntr2;
      prevTemp=curTemperature;
      prevMode = ppmAge;
      prevLat = mppmDif;
+     prevFS=FSdetect;
      
      showStage =1;
   }   
 
   switch(showStage) {
   case 1:                       // вывод состояния
-     Serial.print("\r");
-     if(ppmAge == 255) Serial.print("Waiting start:");
+     Serial.write('\r');
+     if(FSdetect) Serial.print("Stop:");
+     else if(ppmAge == 255) Serial.print("Waiting start:");
      else if(ppmAge > 5) Serial.print("Input lost:");
      else {
        if(!nchan) {            // один раз подстчитаем каналы PPM
@@ -297,12 +300,13 @@ void showState(void)   // Отображение состояния после �
          }
          ppmLoop();
        } 
-       if(ppmMicroPPM == 255) Serial.print("SBUS mode:");
+       if(ppmMicroPPM == 255) Serial.print("SBUS");
        else {
          if(ppmMicroPPM) Serial.print("Fut750u ");
          Serial.print("PPM");   ppmLoop();
-         Serial.print(nchan); Serial.print(" mode:");
+         Serial.print(nchan); 
        }
+       Serial.print(" mode:");
      }
      ppmLoop();
      showStage=2;
@@ -333,7 +337,7 @@ void showState(void)   // Отображение состояния после �
 
   case 4:
      if(Regs4[5]&1) {        // если включен вывод PPM импульсов
-       for(i=0; i<8; i++) { Serial.print("    "); ppmLoop(6); }             // подчистим грязь
+       for(i=0; i<8; i++) { Serial.print("    "); ppmLoop(2); }             // подчистим грязь
      }
      Serial.println();  
      showStage=showNum=0;
@@ -356,6 +360,7 @@ void showState(void)   // Отображение состояния после �
 bool checkPPM(void)         // проверка PPM/SBUS на failSafe ретранслятора
 {
   if(Regs4[4]) {                   // если проверка разрешена
+    FSdetect=1;
     if(ppmMicroPPM == 255) {       // режим SBUS, FS = бит3 в управл. байте
       if(sbusPkt[23]&0x8) return false;
     } else {
@@ -365,5 +370,6 @@ bool checkPPM(void)         // проверка PPM/SBUS на failSafe ретр�
     }
 
   }
+  FSdetect=0;
   return true;            // PPM в порядке
 }  
