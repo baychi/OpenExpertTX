@@ -12,9 +12,9 @@ void Red_LED_Blink(unsigned short blink_count)  // на самом деле ин
 {
   word i;
   for (i=0;i<blink_count;i++)     {
-     Sleep(125);
+     Sleep(250);
      Green_LED_ON;
-     Sleep(125);
+     Sleep(250);
      Green_LED_OFF;
      if(blink_count > 50) {
        if(checkMenu()) {
@@ -50,4 +50,3 @@ void Sleep(word ms)
   
   while(millis() < t) ppmLoop();
 }
-
