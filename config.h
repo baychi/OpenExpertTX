@@ -7,7 +7,7 @@
 
 // Версия и номер компиляции. Используется для проверки целостности программы
 // При модификации программы необходимо изменить одно из этих чисел 
-unsigned char version[] = { 2, 1 };
+unsigned char version[] = { 3, 1 };
 
 //####### TX BOARD TYPE #######
 // 1 = TX 2G/Tiny original Board
@@ -25,7 +25,6 @@ unsigned char version[] = { 2, 1 };
 #define CARRIER_FREQUENCY  433075  // 433Mhz startup frequency !!! не менять
 #define HOPPING_STEP_SIZE  6 // 60kHz hopping steps
 #define HOPE_NUM          8 /* number of hope frequensies */ 
-#define AFC_POROG         3 /* предельное отклонение частоты, требующее коррекции */
 
 //###### HOPPING CHANNELS #######
 //Каналы прыжков (регистры 11-18) Select the hopping channels between 0-255
@@ -67,9 +66,11 @@ unsigned int maxDif=0;               // для контроля загружен
     #define SDO_pin 12
     #define SDI_pin 11        
     #define SCLK_pin 13 
+    #define SDN_pin 9
+
     #define IRQ_pin 7
     #define nSel_pin 10
-    #define IRQ_interrupt 0
+    #define IRQ_interrupt 
     #define PPM_IN 8
     #define USE_ICP1 // Use ICP1 in input capture mode
     #define BUTTON 5
@@ -99,7 +100,7 @@ unsigned int maxDif=0;               // для контроля загружен
     #define Green_LED_ON  PORTD |= _BV(6); // проецируем
     #define Green_LED_OFF PORTD &= ~_BV(6);    
 
-    #define Serial_PPM_IN PORTB |= _BV(0) //Serial PPM IN
+//    #define Serial_PPM_IN PORTB |= _BV(0) //Serial PPM IN
 #endif
 
 
@@ -211,6 +212,7 @@ unsigned int maxDif=0;               // для контроля загружен
     #define SDO_pin 12
     #define SDI_pin 11
     #define SCLK_pin 13
+    #define SDN_pin 9
     #define IRQ_pin 2
     #define nSel_pin 4
     #define IRQ_interrupt 0
@@ -270,4 +272,5 @@ extern unsigned int mppmDif,maxDif;
 extern unsigned int PPM[RC_CHANNEL_COUNT+2];     // текущие длительности канальных импульсов
 extern unsigned char ppmAge; // age of PPM data
 void printlnPGM(char *adr, char ln=1);   // печать строки из памяти программы ln - перевод строки
+void _spi_write(unsigned char, unsigned char);  // Gfsk,  fd[8] =0, no invert for Tx/Rx data, fifo mode, txclk -->gpio 
 
