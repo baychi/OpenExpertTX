@@ -51,10 +51,16 @@ void checkFS(void)        // проверка нажатия кнопочки д
 
 void setup(void)
 {
+#if(TX_BOARD_TYPE == 1 || TX_BOARD_TYPE == 4)    
+   pinMode(SDN_pin, OUTPUT); //SDn
+   digitalWrite(SDN_pin, LOW);
+#endif
+
    pinMode(SDO_pin, INPUT); //SDO
    pinMode(SDI_pin, OUTPUT); //SDI        
    pinMode(SCLK_pin, OUTPUT); //SCLK
    pinMode(IRQ_pin, INPUT); //IRQ
+   digitalWrite(IRQ_pin, HIGH);
    pinMode(nSel_pin, OUTPUT); //nSEL
      
    pinMode(0, INPUT); // Serial Rx
@@ -73,19 +79,9 @@ void setup(void)
 
    Serial.begin(SERIAL_BAUD_RATE);
 
-  setupPPMinput();
-  EIMSK &=~1;          // запрещаем INT0 
-  RF22B_init_parameter();
-
-  sei();
-
-  Red_LED_ON;
-  delay(100);
-  for(byte i=0; i<RC_CHANNEL_COUNT; i++) PPM[i]=0;
-
-  Red_LED_OFF;
-  ppmAge = 255;
-  rx_reset();
+   setupPPMinput();
+   EIMSK &=~1;          // запрещаем INT0 
+   sei();
 }
 
 void loop(void)        // главный фоновый цикл 
@@ -96,19 +92,36 @@ void loop(void)        // главный фоновый цикл
   printHeader();
   eeprom_check();      // Считываем и проверяем FLASH и настройки    
 
-  wdt_enable(WDTO_1S);     // запускаем сторожевой таймер 
-  mppmDif=maxDif=0;   // !!!!!!!
-  getTemper();                           // меряем темперартуру
+  Red_LED_ON;
+  RF22B_init_parameter();
+  delay(99);
+  for(byte i=0; i<RC_CHANNEL_COUNT; i++) PPM[i]=0;
+  Red_LED_OFF;
   rx_reset();
-  Sleep(99);
+  ppmAge = 255;
 
+  Serial.println();
+  showState();     // отображаем режим и дебуг информацию 
+
+  for(i=0; i<32; i++) {   // ждем старта RFM ки до 3-х секунд 
+    getTemper();           // меряем темперартуру
+    if (curTemperature > -40 && _spi_read(0x0C) != 0) break;  // если даные вменяемы, можно стартовать
+    RF22B_init_parameter();
+    delay(99);          
+  }
+
+  wdt_enable(WDTO_1S);     // запускаем сторожевой таймер 
+  rx_reset();
+
+  mppmDif=maxDif=0;       // сброс статистики
   unsigned long time = micros();
   lastSent=time; 
 
   while(1) {
     ppmLoop();
     wdt_reset();               // поддержка сторожевого таймера
-    if(checkMenu()) {
+
+    if(checkMenu()) {          // проверяем на вход в меню
        doMenu(); 
        lastSent=micros(); 
     }
@@ -116,10 +129,11 @@ void loop(void)        // главный фоновый цикл
     if (_spi_read(0x0C) == 0) {     // detect the locked module and reboot
       Serial.println("RFM lock?");
       Green_LED_ON;
+      Sleep(249);
+re_init:
       RF22B_init_parameter();
       rx_reset();
       mppmDif=maxDif=0; // !!!!!!!
-      Sleep(249);
       continue;      
     }
 
@@ -132,7 +146,7 @@ void loop(void)        // главный фоновый цикл
       if(pwm >= 28999) {
         if(pwm > 32999) lastSent=time-31500;     // при слишком больших разбежках поправим время отправки
         Hopping();
-        to_tx_mode();                          // формируем и посылаем пакет
+        if(!to_tx_mode()) goto re_init;        // формируем и посылаем пакет
         getTemper();                           // меряем темперартуру
         ppmAge++;
         showState();                           // отображаем режим и дебуг информацию 
@@ -148,5 +162,4 @@ void loop(void)        // главный фоновый цикл
        Sleep(99);
     }
   }  
-  
 }
