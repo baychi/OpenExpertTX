@@ -36,13 +36,13 @@ static char help[][32] PROGMEM = {
 char htxt1[] PROGMEM = "\r\nBaychi soft 2013";
 char htxt2[] PROGMEM = "TX Open Expert V2 F";
 char htxt3[] PROGMEM = "Press 'm' to start MENU";
+
 void printHeader(void)
 {
   printlnPGM(htxt1);
   printlnPGM(htxt2,0); Serial.println(version[0]);
-  printlnPGM(htxt3);
-
   showRegs();
+  printlnPGM(htxt3);
 }  
 
 void printlnPGM(char *adr, char ln)   // печать строки из памяти программы
@@ -55,22 +55,6 @@ void printlnPGM(char *adr, char ln)   // печать строки из памя
   }
 
   if(ln) Serial.println();  
-}
-
-void showRegs(void)         // показать значения регистров
-{
-  unsigned char i,j=0,k;
-  
-  for(int i=1; i<=REGS_NUM; i++) {
-    if(regs[j] == i) {
-      Serial.print(i);
-      Serial.write('=');
-      Serial.print(read_eeprom_uchar(i));
-      Serial.write('\t');
-      printlnPGM(help[j]);   // читаем строки из программной памяти
-      j++;
-    }
-  }
 }
 
 
@@ -203,9 +187,27 @@ void showNoise(char str[])             // отображаем уровень ш
 }
 
 // Перенесем текст меню в память программ
-char mtxt1[] PROGMEM = "To Enter MENU Press ENTER";
+char mtxt1[] PROGMEM = "\n\rTo Enter MENU Press ENTER";
 char mtxt2[] PROGMEM = "Type Reg and press ENTER, type Value and press ENTER (q=Quit; Nx-y = Show noise)";
-char mtxt3[] PROGMEM = "Rg=Val \tComments -----------------------";
+char mtxt3[] PROGMEM = "\r\nRg=Val \tComments -----------------------";
+
+void showRegs(void)         // показать значения регистров
+{
+  unsigned char i,j=0,k;
+  
+  printlnPGM(mtxt3);
+  for(int i=1; i<=REGS_NUM; i++) {
+    if(regs[j] == i) {
+      Serial.print(i);
+      Serial.write('=');
+      Serial.print(read_eeprom_uchar(i));
+      Serial.write('\t');
+      printlnPGM(help[j]);   // читаем строки из программной памяти
+      j++;
+    }
+  }
+}
+
 
 void doMenu()                       // работаем с меню
 {
@@ -216,7 +218,6 @@ void doMenu()                       // работаем с меню
   if(str[0] == 'q' || str[0] == 'Q') return;     // Q - то quit
   
   while(1) {
-    printlnPGM(mtxt3);
     showRegs();
     printlnPGM(mtxt2);
 
