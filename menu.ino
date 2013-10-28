@@ -213,6 +213,8 @@ void doMenu()                       // работаем с меню
 {
   char str[8];
   int reg,val;
+
+  to_sleep_mode();
   printlnPGM(mtxt1);
   getStr(str);
   if(str[0] == 'q' || str[0] == 'Q') return;     // Q - то quit
