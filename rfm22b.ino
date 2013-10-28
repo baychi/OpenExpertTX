@@ -14,11 +14,11 @@
 #define RF22B_PWRSTATE_READY    01 
 #define RF22B_PWRSTATE_TX       0x09 
 #define RF22B_PWRSTATE_RX       05 
+#define RF22B_PWRSTATE_POWERDOWN  00 
 
 // Режимы прерывания для 5-го регистра
 #define RF22B_Rx_packet_received_interrupt   0x02 
 #define RF22B_PACKET_SENT_INTERRUPT  04 
-#define RF22B_PWRSTATE_POWERDOWN  00 
 
 unsigned char ItStatus1, ItStatus2; 
 
@@ -231,7 +231,7 @@ void RF22B_init_parameter(void)
 void rx_reset(void) 
 { 
   _spi_write(0x07, RF22B_PWRSTATE_READY); 
-  _spi_write(0x7e, 36);    // threshold for rx almost full, interrupt when 1 byte received 
+  _spi_write(0x7e, 36);    // threshold for rx almost full, interrupt when 36 byte received 
   ppmLoop(); 
 
   _spi_write(0x08, 0x03);    // clear fifo disable multi packet 
@@ -376,13 +376,7 @@ void to_ready_mode(void)
 //-------------------------------------------------------------- 
 void to_sleep_mode(void) 
 { 
-  _spi_write(0x07, RF22B_PWRSTATE_READY);  
-   
-  ItStatus1 = _spi_read(0x03);  //read the Interrupt Status1 register 
-  ItStatus2 = _spi_read(0x04);    
-  ppmLoop(); 
-  _spi_write(0x07, RF22B_PWRSTATE_POWERDOWN); 
-
+  to_rx_mode();
 } 
 
 //############# FREQUENCY HOPPING FUNCTIONS #################
@@ -406,7 +400,7 @@ void Hopping(void)
 void getTemper (void)
 {
    _spi_write(0x0f, 0x80);               // запускаем измерение температуры 
-   Sleep(2);                             
+   SleepMks(333);                             
    curTemperature=_spi_read(0x11)-0x40;  // читаем температуру из АЦП
 #if(TX_BOARD_TYPE == 1 || TX_BOARD_TYPE == 4)  // RFM23BP
    if(curTemperature > -40 && curTemperature < 85) freqCorr=-(curTemperature-25)/10;     // работаем только вреальном диапазоне
