@@ -50,3 +50,10 @@ void Sleep(word ms)
   
   while(millis() < t) ppmLoop();
 }
+// Пауза с отдачей квантов
+void SleepMks(word mks) 
+{
+  unsigned long t=micros()+mks;
+  
+  while(micros() < t) ppmLoop();
+}
