@@ -254,13 +254,13 @@ void to_rx_mode(void)
   rx_reset(); 
 }  
 
-word ppmCode(byte ch)                  // преобразование мкс PPM в 10 битный код
+word ppmCode(byte ch)                  // преобразование мкс PPM в 11 битный код
 {
-  word pwm=PPM[ch];                   // берем длительность импульса в мкс 
+  word pwm=PPM[ch];                    // берем длительность импульса в мкс*2 
 
-  if(pwm < 988) pwm=0;
-  else if(pwm > 2011) pwm=1023;
-  else pwm=pwm-988;
+  if(pwm < 1976) pwm=0;
+  else if(pwm > 4023) pwm=2047;
+  else pwm=pwm-1976;
 
   return pwm;
 }  
@@ -272,7 +272,7 @@ word ppmCode(byte ch)                  // преобразование мкс PP
 
 bool to_tx_mode(void)                  // Подготовка и отсылка пакета на лету
 { 
-  byte i,j,k,l;
+  byte i,j,k,m,b12;
   word pwm;
   unsigned long tx_start;
 
@@ -284,8 +284,8 @@ bool to_tx_mode(void)                  // Подготовка и отсылка
     cli();
     pwm=PPM[PowReg[0]-1];                // берем длительность импульса
     sei();
-    if(pwm < 1300) i=PowReg[1];         // и определяем, какую мощность требуют
-    else if(pwm >= 1700) i=PowReg[3];
+    if(pwm < 2600) i=PowReg[1];         // и определяем, какую мощность требуют
+    else if(pwm >= 3400) i=PowReg[3];
     else i=PowReg[2];
   } else i=PowReg[1];
   
@@ -319,29 +319,40 @@ bool to_tx_mode(void)                  // Подготовка и отсылка
 
     if((i<RF_PACK_SIZE) && (micros()-tx_start) > (i+2)*ONE_BYTE_MKS) {   // ждем пока не подойдет реальное время отправки (запас 1 байт)
         if(i == 1) {                                 // формируем байт старших бит и делаем предварительную подготовку пакета
-          for(l=j=k=0; l<8; l++) {                   
-            pwm=ppmCode(l);
-            if(pwm >= 512) j |= 1<<l;         // байт старших бит
-            RF_Tx_Buffer[l+2]=(pwm>>1)&255;          // 8 средних бит первых 8 каналов
-            if(l<7 && (pwm&1)) k |= (2<<l);          // байт младших бит (10 бит кодирование в упр. байте)
+          for(m=j=k=b12=0; m<8; m++) {                   
+            pwm=ppmCode(m);
+            if(pwm >= 1024) j |= 1<<m;              // байт старших бит
+            RF_Tx_Buffer[m+2]=((pwm>>2)&255);       // 8 средних бит первых 8 каналов
+            if(m<7) {
+              if(pwm&2) k |= (2<<m);                 // байт младших бит (10 бит кодирование в упр. байте)
+              if(pwm&1) b12 |= (1<<m);               // и байт дополнительных 11-х бит
+            }
           }
           _spi_write(0x7f,(RF_Tx_Buffer[1]=j));      // отсылаем байт старших бит
           RF_Tx_Buffer[RC_CHANNEL_COUNT+3]=k;       // запоминаем младшие биты
+          if(Regs4[5]) RF_Tx_Buffer[RC_CHANNEL_COUNT+1]=b12; // и сверхмладшие
         } else if(i < RF_PACK_SIZE-2) {              // отправляем основные байты данных
            pwm=ppmCode(i-2);
            if(i < 10) {                              // для первых 8 байт нужна особая обработка, учитывая что байт старших бит
              k=1<<(i-2); j=0;                        // уже отправлен и его не изменить.
-             if(pwm >= 512) j=k;
+             if(pwm >= 1024) j=k;
              if((RF_Tx_Buffer[1]&k) == j) {          // если бит совпадает, с прежним, можно кодировать средние биты
-                RF_Tx_Buffer[i]=(pwm>>1)&255;        // 8 младших бит первых 8 каналов
+                RF_Tx_Buffer[i]=((pwm>>2)&255);        // 8 младших бит первых 8 каналов
                 if(i < 9) {
+                  if(Regs4[5]) {                     // если надо, то еще и 11-е биты вместо последнего канала пакуем 
+                    if(pwm&1) RF_Tx_Buffer[RC_CHANNEL_COUNT+1] |= k;       // и не забываем уточнять младшие биты 
+                    else RF_Tx_Buffer[RC_CHANNEL_COUNT+1] &= ~k;           // первых 7 ми каналов в управляющем байте 
+                  }
                   k=k+k;                             // маска младшего бита
-                  if(pwm&1) RF_Tx_Buffer[RC_CHANNEL_COUNT+3] |= k;       // и не забываем уточнять младшие биты 
+                  if(pwm&2) RF_Tx_Buffer[RC_CHANNEL_COUNT+3] |= k;       // и не забываем уточнять младшие биты 
                   else RF_Tx_Buffer[RC_CHANNEL_COUNT+3] &= ~k;           // первых 7 ми каналов в управляющем байте 
                 }
              }     
-          } else RF_Tx_Buffer[i]=(pwm>>2)&255;        // остальные каналы просто формируем на лету
+          } else {
+            if(i != RC_CHANNEL_COUNT+1 || Regs4[5] == 0) RF_Tx_Buffer[i]=(pwm>>3)&255;        // остальные каналы просто формируем на лету
+          }  
           _spi_write(0x7f,RF_Tx_Buffer[i]);           // отсылаем очередной байт
+          
         } else if(i == RF_PACK_SIZE-2) {
           RF_Tx_Buffer[RC_CHANNEL_COUNT+2] = CRC8(RF_Tx_Buffer+2, RC_CHANNEL_COUNT); // формируем СRC8
           _spi_write(0x7f,RF_Tx_Buffer[RC_CHANNEL_COUNT+2]);  // и отсылаем ее
@@ -354,7 +365,7 @@ bool to_tx_mode(void)                  // Подготовка и отсылка
   }
 
   if(nIRQ_1) {                                     // Если не дождались отсылки
-    Serial.println("Timeout!");
+    Serial.println("Timeout");
     return false;
   } 
 
