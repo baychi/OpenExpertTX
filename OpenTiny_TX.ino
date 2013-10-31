@@ -133,7 +133,7 @@ void loop(void)        // главный фоновый цикл
     }
     
     if (_spi_read(0x0C) == 0) {     // detect the locked module and reboot
-      Serial.println("RFM lock?");
+      Serial.println("RFM lock");
       Green_LED_ON;
       Sleep(249);
 re_init:
