@@ -11,13 +11,14 @@
 
 // Функции меню терминала
 //
-static unsigned char regs[] = {1, 2, 3, 4, 5, 11,12,13,14,15,16,17,18,19,20,21,22 }; // номера отображаемых регистров
+static unsigned char regs[] = {1, 2, 3, 4, 5, 6, 11,12,13,14,15,16,17,18,19,20,21,22 }; // номера отображаемых регистров
 
 static char help[][32] PROGMEM = {
   "Bind N",
   "Freq correction const",
   "Term corr enable",
   "FS check enable",
+  "11 bit/11 ch enable",
   "Debug out (1-PPM, 2-perf.)",
   "Hope F1",
   "Hope F2",
