@@ -51,13 +51,6 @@ void checkFS(void)        // проверка нажатия кнопочки д
 
 void setup(void)
 {
-/***************************
-#if(TX_BOARD_TYPE == 1 || TX_BOARD_TYPE == 4)    
-   pinMode(SDN_pin, OUTPUT); //SDn
-   digitalWrite(SDN_pin, LOW);
-#endif
-*********************/
-
 #if(SDN_pin != 0)    
    pinMode(SDN_pin, OUTPUT); //SDn
    digitalWrite(SDN_pin, LOW);
