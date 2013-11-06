@@ -287,7 +287,7 @@ bool to_tx_mode(void)                  // Подготовка и отсылка
     if(pwm < 2600) i=PowReg[1];         // и определяем, какую мощность требуют
     else if(pwm >= 3400) i=PowReg[3];
     else i=PowReg[2];
-  } else i=PowReg[1];
+  } else i=PowReg[3];                   // если не задано, используем макс. мощность  
   
   i=i&7;
   if(++lastPower > (8-i)*3) {
@@ -329,7 +329,7 @@ bool to_tx_mode(void)                  // Подготовка и отсылка
             }
           }
           _spi_write(0x7f,(RF_Tx_Buffer[1]=j));      // отсылаем байт старших бит
-          RF_Tx_Buffer[RC_CHANNEL_COUNT+3]=k;       // запоминаем младшие биты
+          RF_Tx_Buffer[RC_CHANNEL_COUNT+3]=k;        // запоминаем младшие биты
           if(Regs4[5]) RF_Tx_Buffer[RC_CHANNEL_COUNT+1]=b12; // и сверхмладшие
         } else if(i < RF_PACK_SIZE-2) {              // отправляем основные байты данных
            pwm=ppmCode(i-2);
@@ -337,19 +337,27 @@ bool to_tx_mode(void)                  // Подготовка и отсылка
              k=1<<(i-2); j=0;                        // уже отправлен и его не изменить.
              if(pwm >= 1024) j=k;
              if((RF_Tx_Buffer[1]&k) == j) {          // если бит совпадает, с прежним, можно кодировать средние биты
-                RF_Tx_Buffer[i]=((pwm>>2)&255);        // 8 младших бит первых 8 каналов
+                RF_Tx_Buffer[i]=((pwm>>2)&255);      // 8 младших бит первых 8 каналов
+                if(Regs4[5]) {                       // если надо, то еще и 11-е биты вместо последнего канала пакуем 
+                  if(pwm&1) RF_Tx_Buffer[RC_CHANNEL_COUNT+1] |= k;       // 11-е первых 8-ми за счет канала 12
+                  else RF_Tx_Buffer[RC_CHANNEL_COUNT+1] &= ~k;            
+                }
                 if(i < 9) {
-                  if(Regs4[5]) {                     // если надо, то еще и 11-е биты вместо последнего канала пакуем 
-                    if(pwm&1) RF_Tx_Buffer[RC_CHANNEL_COUNT+1] |= k;       // и не забываем уточнять младшие биты 
-                    else RF_Tx_Buffer[RC_CHANNEL_COUNT+1] &= ~k;           // первых 7 ми каналов в управляющем байте 
-                  }
                   k=k+k;                             // маска младшего бита
                   if(pwm&2) RF_Tx_Buffer[RC_CHANNEL_COUNT+3] |= k;       // и не забываем уточнять младшие биты 
                   else RF_Tx_Buffer[RC_CHANNEL_COUNT+3] &= ~k;           // первых 7 ми каналов в управляющем байте 
                 }
              }     
           } else {
-            if(i != RC_CHANNEL_COUNT+1 || Regs4[5] == 0) RF_Tx_Buffer[i]=(pwm>>3)&255;        // остальные каналы просто формируем на лету
+            if(Regs4[5] == 0 || (i != RC_CHANNEL_COUNT && i != RC_CHANNEL_COUNT+1)) RF_Tx_Buffer[i]=(pwm>>3)&255;        // остальные каналы просто формируем на лету
+            else if(i == RC_CHANNEL_COUNT) {         // в режиме 11 бит формируем последние младшие биты каналов, за счет канала 11
+              pwm=ppmCode(i-2);
+              RF_Tx_Buffer[i]=pwm&7;                 // 3 бита для байта 9
+              pwm=ppmCode(i-1);
+              RF_Tx_Buffer[i] |= (pwm&7)<<3;         // 3 бита для байта 10 
+              pwm=ppmCode(7);  
+              RF_Tx_Buffer[i] |= (pwm&2)<<5;         // и один бит для байта 8 
+            }
           }  
           _spi_write(0x7f,RF_Tx_Buffer[i]);           // отсылаем очередной байт
           
@@ -424,3 +432,130 @@ void getTemper (void)
 #endif
    ppmLoop();
 }  
+
+// Процедуры автонастройеи передатчика
+//
+#define NOISE_POROG 222                   // порог шума, выше которого канал не рассматриваем 
+#define BUT_HOLD_TIME 4999                // время ожидания старта бинда по кнопке
+#define LAST_FREQ_CHNL 232                // верхняя граница рассматриваемого диапазона
+
+static byte zw=29;                         // ширина одной частотной зоны
+
+byte findChnl(byte zn)                   // поиск лучшего чатотного канала в зоне zn или соседних
+{
+  byte n=scanZone(zn);                   // сканируем свою зону
+  if(n > LAST_FREQ_CHNL) {
+    if(zn) n=scanZone(zn-1);              // попробуем поискать в соседней
+    if(n < LAST_FREQ_CHNL) return n;
+    if(zn < 7) n=scanZone(zn-1);          // попробуем поискать в соседней
+  }
+
+  return n;
+}  
+
+byte scanZone(byte zn)                     // поиск лучшего чатотного канала в зоне zn
+{
+    byte *buf=(byte *)pulseBuf;            // используем буфер SBUS для работы
+    byte i,j,n,m;                             
+    zn=zn*zw; m=zn+zw;                     // это границы нашей зоны
+    j=n=255;
+    for(i=zn; i<m; i++) {
+      if(buf[i] < NOISE_POROG) {
+        if(buf[i] < j) { j=buf[i]; n=i; }   // ищем минимуум в зоне
+      }
+    }
+    if(j<NOISE_POROG) {                     // если нашли успешно 
+      Serial.write(' '); Serial.print(n);
+      Serial.print("/"); Serial.print(j/4);
+      if(n) buf[n-1]=255;                   // запрещаем соседние частоты
+      if(n>1) buf[n-2]=255;
+      buf[n]=buf[n+1]=buf[n+2]=255;        // и свою, что-б никто не полез
+    }  
+    return n;
+}
+
+
+char btxt1[] PROGMEM = "\r\nTry to new bind...";
+char btxt2[] PROGMEM = "\n\rFreq/noise: ";
+char btxt3[] PROGMEM = "Error: too noise!";
+char btxt4[] PROGMEM = "Bind N=";
+
+// Автонастройка передатчика
+//
+void makeAutoBind(byte p)                 // p=0 - c проверкой кнопки, p=255 - принудительный сброс настроек          
+{
+  byte *buf=(byte *)pulseBuf;               // используем буфер SBUS для накопления
+  byte i,j,k,n;
+  unsigned long t=0;
+  
+  if(p == 0) {                   // при обычном вызове
+    t=millis()+BUT_HOLD_TIME;
+    Green_LED_OFF;
+    do {
+      wdt_reset();               //  поддержка сторожевого таймера
+      checkFS(0);                 // отслеживаем нажатие кнопочки
+      
+      if(millis() > t) Green_LED_ON;  // индициируем, что пора заканчивать
+    } while(FSstate);
+    if(millis() < t) return;     // не нажимали или держали мало 
+    if(!read_eeprom()) goto reset;    
+  } else {
+    if(p == 255) {               // принудительный вызов со сбросом регистров в дефолт 
+reset:
+      Regs4[3]=1; Regs4[4]=Regs4[5]=Regs4[6]=0;
+      PowReg[0]=0; PowReg[1]=0; PowReg[2]=2; PowReg[3]=7;
+    }
+    Green_LED_ON;
+  }
+
+repeat:  
+  if(Regs4[2] < 170 || Regs4[2] > 230) Regs4[2]=199;  // на всякий случай проверим поправку
+  RF22B_init_parameter();      // готовим RFMку 
+  to_rx_mode(); 
+  rx_reset();
+
+  printlnPGM(btxt1,0);
+  for(i=0; i<255; i++) buf[i]=0;
+//     
+// Постоянно сканируем эфир, на предмет выявления возможных частот 
+
+  for(k=0; k<31; k++) {  
+    wdt_reset();               //  поддержка сторожевого таймера
+    for(i=0; i<LAST_FREQ_CHNL; i++) {
+      _spi_write(0x79, i);      // ставим канал
+      delayMicroseconds(999);   // ждем пока перекинется
+      j=_spi_read(0x26);        // читаем уровень сигнала
+      j >>= 3;                  // делим на 8 
+      if(j > 7) j=8;            // что-бы не перебрать
+      buf[i] += j;              // накапливаем среднее
+    }
+  }
+  Green_LED_OFF;                // сигнализируем о завершении
+  
+  zw=(LAST_FREQ_CHNL+7)/8;      // ширина зоны  
+  
+  printlnPGM(btxt2,0);          // раскидываем каналы прыжков
+  hop_list[0]=findChnl(0);
+  hop_list[1]=findChnl(4);
+  hop_list[2]=findChnl(1);
+  hop_list[3]=findChnl(5);
+  hop_list[4]=findChnl(2);
+  hop_list[5]=findChnl(6);
+  hop_list[6]=findChnl(3);
+  hop_list[7]=findChnl(7);
+  Serial.println();
+  
+  for(i=0; i<8; i++) {         // проверяем каналы
+   if(hop_list[i] > LAST_FREQ_CHNL) {
+      printlnPGM(btxt3);
+      Red_LED_Blink(5);
+      goto repeat;
+    }
+  }    
+  t=millis() - t;         // номер бинда формируется благодоря случайному всеремни отпускания кнопки
+  i=t&255; if(!i) i++;    // избегаем 0-ля
+  printlnPGM(btxt4,0);  Serial.println(i); // отображаем
+  Regs4[1]=i;
+
+  write_eeprom();         // запоминаем настройки 
+}
