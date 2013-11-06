@@ -372,3 +372,4 @@ bool checkPPM(void)         // проверка PPM/SBUS на failSafe ретр�
   FSdetect=0;
   return true;            // PPM в порядке
 }  
+
