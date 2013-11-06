@@ -18,7 +18,7 @@ static char help[][32] PROGMEM = {
   "Freq correction const",
   "Term corr enable",
   "FS check enable",
-  "11 bit/11 ch enable",
+  "11 bit/10 ch enable",
   "Debug out (1-PPM, 2-perf.)",
   "Hope F1",
   "Hope F2",
@@ -191,6 +191,7 @@ void showNoise(char str[])             // отображаем уровень ш
 char mtxt1[] PROGMEM = "\n\rTo Enter MENU Press ENTER";
 char mtxt2[] PROGMEM = "Type Reg and press ENTER, type Value and press ENTER (q=Quit; Nx-y = Show noise)";
 char mtxt3[] PROGMEM = "\r\nRg=Val \tComments -----------------------";
+char mtxt4[] PROGMEM = "Make new bind? Are you sure(y/n)?";
 
 void showRegs(void)         // показать значения регистров
 {
@@ -231,6 +232,15 @@ rep:
        showNoise(str);
        goto rep;
     }
+    if(str[0] == 'r' && str[1] == 'e' && str[2] == 'b' && str[3] == 'i' && str[4] == 'n' && str[5] == 'd') { // rebinding
+      printlnPGM(mtxt4,0);
+      getStr(str);
+      if(str[0] == 'y' || str[0] == 'Y') {
+        makeAutoBind(1);    
+        continue;
+      }    
+    }      
+
     if(str[0] == 'q' || str[0] == 'Q') return;     // Q - то quit
     reg=atoi(str);
     if(reg<0 || reg>REGS_NUM) continue; 
@@ -243,8 +253,8 @@ rep:
 
     Serial.print(reg); Serial.write('=');   Serial.println(val);  // Отобразим полученное
     
-     write_eeprom_uchar(reg,val);  // пишем регистр
-     read_eeprom();                // читаем из EEPROM    
-     write_eeprom();               // и тут-же пишем, что-бы сформировать КС 
+    write_eeprom_uchar(reg,val);  // пишем регистр
+    read_eeprom();                // читаем из EEPROM    
+    write_eeprom();               // и тут-же пишем, что-бы сформировать КС 
   }    
 }  
