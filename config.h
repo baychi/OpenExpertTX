@@ -3,11 +3,11 @@
 // ***       OpenTiny TX Configuration file               **
 // ***********************************************************
 // Version Number     : 2.1
-// Latest Code Update : 2013-10-22
+// Latest Code Update : 2013-11-06
 
 // Версия и номер компиляции. Используется для проверки целостности программы
 // При модификации программы необходимо изменить одно из этих чисел 
-unsigned char version[] = { 4, 1 };
+unsigned char version[] = { 5, 1 };
 
 //####### TX BOARD TYPE #######
 // 1 = TX 2G/Tiny original Board
