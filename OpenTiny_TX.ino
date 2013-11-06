@@ -16,7 +16,7 @@ byte FSstate = 0;          // 1 = waiting timer, 2 = send FS, 3 sent waiting BUT
 unsigned long FStime = 0;  // time when button went down...
 unsigned long lastSent = 0;
 
-void checkFS(void)        // проверка нажатия кнопочки для отсылки FS кадра
+void checkFS(bool led=true)        // проверка нажатия кнопочки для отсылки FS кадра
 {
   switch (FSstate) {
   case 0:
@@ -31,7 +31,6 @@ void checkFS(void)        // проверка нажатия кнопочки д
     if (!digitalRead(BUTTON)) {
       if ((millis() - FStime) > 500) {
         FSstate = 2;
-        Green_LED_ON;
       }
     } else {
       FSstate = 0;
@@ -42,7 +41,7 @@ void checkFS(void)        // проверка нажатия кнопочки д
     if (digitalRead(BUTTON)) {
       FSstate = 0;
     } else {
-      Green_LED_ON;
+      if(led) Green_LED_ON;
     }
 
     break;
@@ -89,13 +88,15 @@ void loop(void)        // главный фоновый цикл
   word pwm;
 
   printHeader();
-  eeprom_check();      // Считываем и проверяем FLASH и настройки    
-
+  wdt_enable(WDTO_1S);     // запускаем сторожевой таймер 
   Red_LED_ON;
-  RF22B_init_parameter();
   delay(99);
   for(byte i=0; i<RC_CHANNEL_COUNT; i++) PPM[i]=0;
   Red_LED_OFF;
+  makeAutoBind(0);     // проверяем на необходимость автобинда и делаем его, если надо
+  eeprom_check();      // Считываем и проверяем FLASH и настройки    
+
+  RF22B_init_parameter();
   rx_reset();
   ppmAge = 255;
 
@@ -109,7 +110,6 @@ void loop(void)        // главный фоновый цикл
     delay(99);          
   }
 
-  wdt_enable(WDTO_1S);     // запускаем сторожевой таймер 
   rx_reset();
 
   mppmDif=maxDif=0;       // сброс статистики
@@ -141,9 +141,9 @@ re_init:
     i=checkPPM();                   // Проверяем PPM на запрет передачи      
     if(i && ppmAge < 7) {
       checkFS();                               // отслеживаем нажатие кнопочки
-      pwm=time - lastSent;                       //  проверяем не пора ли готовить отправку
+      pwm=time - lastSent;                     //  проверяем не пора ли готовить отправку
       if(pwm >= 28999) {
-        if(pwm > 32999) lastSent=time-31500;     // при слишком больших разбежках поправим время отправки
+        if(pwm > 32999) lastSent=time-31500;   // при слишком больших разбежках поправим время отправки
         Hopping();
         if(!to_tx_mode()) goto re_init;        // формируем и посылаем пакет
         getTemper();                           // меряем темперартуру
@@ -156,7 +156,7 @@ re_init:
        Sleep(99);
     } else if(ppmAge > 5 || i == 0) {
 extern byte prevFS;  
-      if(!prevFS) to_sleep_mode();            // нет PPM - нет и передачи
+      if(!prevFS) to_sleep_mode();             // нет PPM - нет и передачи
        getTemper();                            // меряем темперартуру
        showState(); 
        Sleep(99);
