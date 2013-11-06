@@ -42,7 +42,7 @@ void write_eeprom_uchar(int address,unsigned char value)
 // Проверка целостности прошивки
 //
 
-int flash_check(void)
+byte flash_check(void)
 {
   unsigned int i,sign,ks=0;
   
@@ -54,9 +54,10 @@ int flash_check(void)
    if(sign != i) {                        // при несовпадении, пропишем новые значения
      write_eeprom_uint(FLASH_SIGN_ADR,sign); 
      write_eeprom_uint(FLASH_KS_ADR,ks);
+     return 1;                            // новая программа
    } else {                               // в противном случае проверяем КС
      i=read_eeprom_uint(FLASH_KS_ADR);
-     if(i != ks) return 1;                // признак разрушенной прошивки
+     if(i != ks) return 255;               // признак разрушенной прошивки
    }
    
    return 0;                               // все в порядке
@@ -112,16 +113,23 @@ char etxt2[] PROGMEM = "Error read settings!";
 
 void eeprom_check(void)              // читаем и проверяем настройки из EEPROM, а также целостность программы
 {
+  byte b=flash_check();
 
-  if(flash_check()) {
+  if(b == 255) {             // совсем плохо, если программа разрушена, работать нельзя       
       printlnPGM(etxt1);
+error_blink:
       Red_LED_Blink(59999);  // долго мигаем красным, если КС не сошлась
+      return;
   }    
   
-   if(!read_eeprom()) {
-        printlnPGM(etxt2);
-        Red_LED_Blink(59999);  // мигаем красным, если КС не сошлась
-   }
+  if(!read_eeprom()) {      // читаем настройки  
+    if(b == 1) {
+       makeAutoBind(255);   // если это первый запуск программы, производим сброс в дефлот, и автонастройку
+    } else {                   
+       printlnPGM(etxt2);
+       goto error_blink; 
+    }
+  }
 }  
 
 
