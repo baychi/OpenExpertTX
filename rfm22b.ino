@@ -254,27 +254,137 @@ void to_rx_mode(void)
   rx_reset(); 
 }  
 
-word ppmCode(byte ch)                  // преобразование мкс PPM в 11 битный код
-{
-  word pwm=PPM[ch];                    // берем длительность импульса в мкс*2 
 
-  if(pwm < 1976) pwm=0;
-  else if(pwm > 4023) pwm=2047;
-  else pwm=pwm-1976;
-
-  return pwm;
-}  
-
-//-------------------------------------------------------------- 
-//
 #define ONE_BYTE_MKS 1055              // временнной интервал между байтами при скорости 74000
 #define TX_MAX_WAIT_TIME 31999         // предельное время ожидания при отправке пакета   
 
-bool to_tx_mode(void)                  // Подготовка и отсылка пакета на лету
-{ 
+void sendOnFlyStd()
+{
   byte i,j,k,m,b12;
   word pwm;
   unsigned long tx_start;
+
+// Цикл формирования и отсылки данных на лету
+  tx_start=micros();
+  i=1;  // первый байт мы уже отослали         
+
+  while(nIRQ_1 && ((micros()-tx_start) < TX_MAX_WAIT_TIME)) {  // ждем окончания, но не бесконечно
+    ppmLoop();
+
+    if((i<RF_PACK_SIZE) && (micros()-tx_start) > (i+2)*ONE_BYTE_MKS) {   // ждем пока не подойдет реальное время отправки (запас 1 байт)
+        if(i == 1) {                                 // формируем байт старших бит и делаем предварительную подготовку пакета
+          for(m=j=k=b12=0; m<8; m++) {                   
+            pwm=PPM[m];
+            if(pwm >= 1024) j |= 1<<m;              // байт старших бит
+            RF_Tx_Buffer[m+2]=((pwm>>2)&255);       // 8 средних бит первых 8 каналов
+            if(m<7) {
+              if(pwm&2) k |= (2<<m);                 // байт младших бит (10 бит кодирование в упр. байте)
+              if(pwm&1) b12 |= (1<<m);               // и байт дополнительных 11-х бит
+            }
+          }
+          _spi_write(0x7f,(RF_Tx_Buffer[1]=j));      // отсылаем байт старших бит
+          RF_Tx_Buffer[RC_CHANNEL_COUNT+3]=k;        // запоминаем младшие биты
+          if(Regs4[5]) RF_Tx_Buffer[RC_CHANNEL_COUNT+1]=b12; // и сверхмладшие
+        } else if(i < RF_PACK_SIZE-2) {              // отправляем основные байты данных
+           pwm=PPM[i-2];
+           if(i < 10) {                              // для первых 8 байт нужна особая обработка, учитывая что байт старших бит
+             k=1<<(i-2); j=0;                        // уже отправлен и его не изменить.
+             if(pwm >= 1024) j=k;
+             if((RF_Tx_Buffer[1]&k) == j) {          // если бит совпадает, с прежним, можно кодировать средние биты
+                RF_Tx_Buffer[i]=((pwm>>2)&255);      // 8 младших бит первых 8 каналов
+                if(Regs4[5]) {                       // если надо, то еще и 11-е биты вместо последнего канала пакуем 
+                  if(pwm&1) RF_Tx_Buffer[RC_CHANNEL_COUNT+1] |= k;       // 11-е первых 8-ми за счет канала 12
+                  else RF_Tx_Buffer[RC_CHANNEL_COUNT+1] &= ~k;            
+                }
+                if(i < 9) {
+                  k=k+k;                             // маска младшего бита
+                  if(pwm&2) RF_Tx_Buffer[RC_CHANNEL_COUNT+3] |= k;       // и не забываем уточнять младшие биты 
+                  else RF_Tx_Buffer[RC_CHANNEL_COUNT+3] &= ~k;           // первых 7 ми каналов в управляющем байте 
+                }
+             }     
+          } else {
+            if(Regs4[5] == 0 || (i != RC_CHANNEL_COUNT && i != RC_CHANNEL_COUNT+1)) RF_Tx_Buffer[i]=(pwm>>3)&255;        // остальные каналы просто формируем на лету
+            else if(i == RC_CHANNEL_COUNT) {         // в режиме 11 бит формируем последние младшие биты каналов, за счет канала 11
+              pwm=PPM[i-2];
+              RF_Tx_Buffer[i]=pwm&7;                 // 3 бита для байта 9
+              pwm=PPM[i-1];
+              RF_Tx_Buffer[i] |= (pwm&7)<<3;         // 3 бита для байта 10 
+              pwm=PPM[7];  
+              RF_Tx_Buffer[i] |= (pwm&2)<<5;         // и один бит для байта 8 
+            }
+          }  
+          _spi_write(0x7f,RF_Tx_Buffer[i]);           // отсылаем очередной байт
+          
+        } else if(i == RF_PACK_SIZE-2) {
+          RF_Tx_Buffer[RC_CHANNEL_COUNT+2] = CRC8(RF_Tx_Buffer+2, RC_CHANNEL_COUNT); // формируем СRC8
+          _spi_write(0x7f,RF_Tx_Buffer[RC_CHANNEL_COUNT+2]);  // и отсылаем ее
+        } else {
+          if(FSstate == 2) RF_Tx_Buffer[RC_CHANNEL_COUNT+3]=0x01; // Нажатие кнопки == команде установки FS 
+          _spi_write(0x7f,RF_Tx_Buffer[RC_CHANNEL_COUNT+3]);  // отсылаем последний, управляющий байт (или байт 10-х бит)
+        } 
+        i++;                                       // продвигаемся в буфере
+    }
+  }
+}
+
+//-------------------------------------------------------------- 
+//
+// Функция для подготовки отправляемых каналов на лету
+// Добавляет биты канала в очередные байты отправляемые в эфир
+
+static byte curB, bitMask, byteCntr, chCntr;
+
+void prepFB(byte idx)
+{
+  if(idx < byteCntr) return;     // уже сформирванно
+  word pwm;
+  byte i;
+  
+  pwm=PPM[chCntr++];             // берем очередной канал 
+  for(i=0; i<11; i++) {          // переносим его 11 бит в буфер отправки
+    if(pwm & 1) curB |= bitMask;
+    if(bitMask == 0x80) {        // дошли до конца байта
+       RF_Tx_Buffer[++byteCntr]=curB; // кладем его в буфер
+       curB=0; bitMask=1;             // и начинаем новый
+     } else bitMask+=bitMask;     // двигаем маску 
+     pwm >>= 1;
+  }
+}  
+
+void sendOnFlyFutaba(void)                         // отправка на лету футабовского кадра
+{
+  byte i,j;
+  unsigned long tx_start;
+
+// Цикл формирования и отсылки данных на лету
+  tx_start=micros();
+  i=1;  // первый байт мы уже отослали         
+  curB=0, bitMask=1, byteCntr=0, chCntr=0;         // готовим контекст  
+
+  while(nIRQ_1 && ((micros()-tx_start) < TX_MAX_WAIT_TIME)) {  // ждем окончания, но не бесконечно
+    ppmLoop();
+
+    if((i<RF_PACK_SIZE) && (micros()-tx_start) > (i+2)*ONE_BYTE_MKS) {   // ждем пока не подойдет реальное время отправки (запас 1 байт)
+       if(i == RF_PACK_SIZE-1) {
+          RF_Tx_Buffer[RF_PACK_SIZE-1] = CRC8(RF_Tx_Buffer+1, RF_PACK_SIZE-2); // формируем СRC8
+       }  else {
+         prepFB(i);
+         if(i == RF_PACK_SIZE-2) {
+           RF_Tx_Buffer[RF_PACK_SIZE-2] &= 0x3f;   // уберем лишнее из последнего байта
+           if(FSstate == 2)                        // и добавим флаг кадра с FS
+             RF_Tx_Buffer[RF_PACK_SIZE-2] |= 0x80;
+         }  
+       }
+        _spi_write(0x7f,RF_Tx_Buffer[i]);   // отсылаем байт
+        i++;                                       // продвигаемся в буфере
+    }
+  }
+}
+
+bool to_tx_mode(void)                  // Подготовка и отсылка пакета на лету
+{ 
+  byte i;
+  word pwm;
 
   to_ready_mode();
  
@@ -284,8 +394,8 @@ bool to_tx_mode(void)                  // Подготовка и отсылка
     cli();
     pwm=PPM[PowReg[0]-1];                // берем длительность импульса
     sei();
-    if(pwm < 2600) i=PowReg[1];         // и определяем, какую мощность требуют
-    else if(pwm >= 3400) i=PowReg[3];
+    if(pwm < 682) i=PowReg[1];           // и определяем, какую мощность требуют 
+    else if(pwm >= 1364) i=PowReg[3];
     else i=PowReg[2];
   } else i=PowReg[3];                   // если не задано, используем макс. мощность  
   
@@ -310,68 +420,9 @@ bool to_tx_mode(void)                  // Подготовка и отсылка
   _spi_write(0x07, RF22B_PWRSTATE_TX);              // старт передачи
   lastSent += 31500;                                // формируем момент следующей отправки пакета
 
-// Цикл формирования и отсылки данных на лету
-  tx_start=micros();
-  i=1;  // первый байт мы уже отослали         
-
-  while(nIRQ_1 && ((micros()-tx_start) < TX_MAX_WAIT_TIME)) {  // ждем окончания, но не бесконечно
-    ppmLoop();
-
-    if((i<RF_PACK_SIZE) && (micros()-tx_start) > (i+2)*ONE_BYTE_MKS) {   // ждем пока не подойдет реальное время отправки (запас 1 байт)
-        if(i == 1) {                                 // формируем байт старших бит и делаем предварительную подготовку пакета
-          for(m=j=k=b12=0; m<8; m++) {                   
-            pwm=ppmCode(m);
-            if(pwm >= 1024) j |= 1<<m;              // байт старших бит
-            RF_Tx_Buffer[m+2]=((pwm>>2)&255);       // 8 средних бит первых 8 каналов
-            if(m<7) {
-              if(pwm&2) k |= (2<<m);                 // байт младших бит (10 бит кодирование в упр. байте)
-              if(pwm&1) b12 |= (1<<m);               // и байт дополнительных 11-х бит
-            }
-          }
-          _spi_write(0x7f,(RF_Tx_Buffer[1]=j));      // отсылаем байт старших бит
-          RF_Tx_Buffer[RC_CHANNEL_COUNT+3]=k;        // запоминаем младшие биты
-          if(Regs4[5]) RF_Tx_Buffer[RC_CHANNEL_COUNT+1]=b12; // и сверхмладшие
-        } else if(i < RF_PACK_SIZE-2) {              // отправляем основные байты данных
-           pwm=ppmCode(i-2);
-           if(i < 10) {                              // для первых 8 байт нужна особая обработка, учитывая что байт старших бит
-             k=1<<(i-2); j=0;                        // уже отправлен и его не изменить.
-             if(pwm >= 1024) j=k;
-             if((RF_Tx_Buffer[1]&k) == j) {          // если бит совпадает, с прежним, можно кодировать средние биты
-                RF_Tx_Buffer[i]=((pwm>>2)&255);      // 8 младших бит первых 8 каналов
-                if(Regs4[5]) {                       // если надо, то еще и 11-е биты вместо последнего канала пакуем 
-                  if(pwm&1) RF_Tx_Buffer[RC_CHANNEL_COUNT+1] |= k;       // 11-е первых 8-ми за счет канала 12
-                  else RF_Tx_Buffer[RC_CHANNEL_COUNT+1] &= ~k;            
-                }
-                if(i < 9) {
-                  k=k+k;                             // маска младшего бита
-                  if(pwm&2) RF_Tx_Buffer[RC_CHANNEL_COUNT+3] |= k;       // и не забываем уточнять младшие биты 
-                  else RF_Tx_Buffer[RC_CHANNEL_COUNT+3] &= ~k;           // первых 7 ми каналов в управляющем байте 
-                }
-             }     
-          } else {
-            if(Regs4[5] == 0 || (i != RC_CHANNEL_COUNT && i != RC_CHANNEL_COUNT+1)) RF_Tx_Buffer[i]=(pwm>>3)&255;        // остальные каналы просто формируем на лету
-            else if(i == RC_CHANNEL_COUNT) {         // в режиме 11 бит формируем последние младшие биты каналов, за счет канала 11
-              pwm=ppmCode(i-2);
-              RF_Tx_Buffer[i]=pwm&7;                 // 3 бита для байта 9
-              pwm=ppmCode(i-1);
-              RF_Tx_Buffer[i] |= (pwm&7)<<3;         // 3 бита для байта 10 
-              pwm=ppmCode(7);  
-              RF_Tx_Buffer[i] |= (pwm&2)<<5;         // и один бит для байта 8 
-            }
-          }  
-          _spi_write(0x7f,RF_Tx_Buffer[i]);           // отсылаем очередной байт
-          
-        } else if(i == RF_PACK_SIZE-2) {
-          RF_Tx_Buffer[RC_CHANNEL_COUNT+2] = CRC8(RF_Tx_Buffer+2, RC_CHANNEL_COUNT); // формируем СRC8
-          _spi_write(0x7f,RF_Tx_Buffer[RC_CHANNEL_COUNT+2]);  // и отсылаем ее
-        } else {
-          if(FSstate == 2) RF_Tx_Buffer[RC_CHANNEL_COUNT+3]=0x01; // Нажатие кнопки == команде установки FS 
-          _spi_write(0x7f,RF_Tx_Buffer[RC_CHANNEL_COUNT+3]);  // отсылаем последний, управляющий байт (или байт 10-х бит)
-        } 
-        i++;                                       // продвигаемся в буфере
-    }
-  }
-
+  if(Regs4[5] == 2) sendOnFlyFutaba();
+  else sendOnFlyStd(); 
+  
   if(nIRQ_1) {                                     // Если не дождались отсылки
     Serial.println("Timeout");
     return false;
