@@ -1,137 +1,276 @@
-// **********************************************************
-// Baychi soft 2013
-// **      RFM22B/23BP/Si4432 Transmitter with Expert protocol **
-// **      This Source code licensed under GPL            **
-// **********************************************************
-// Latest Code Update : 2013-10-22
-// Supported Hardware : Expert Tiny, Orange/OpenLRS Tx/Rx boards (store.flytron.com)
-// Project page       : https://github.com/baychi/OpenExpertTX
-// **********************************************************
+// ***********************************************************
+// Baychi Soft 2013         
+// ***       OpenTiny TX Configuration file               **
+// ***********************************************************
+// Version Number     : 2.1
+// Latest Code Update : 2013-11-06
 
-#define REGS_EERPON_ADR  4     /* first byte of eeprom */
+// Версия и номер компиляции. Используется для проверки целостности программы
+// При модификации программы необходимо изменить одно из этих чисел 
+unsigned char version[] = { 6, 1 };
 
-#define FLASH_SIZE 16384         /* размер контроллируемой памяти программ */
-#define FLASH_SIGN_ADR 64         /* адрес сигнатуры прошивки в EEPROM */
-#define FLASH_KS_ADR 66           /* адрес контрольной суммы прошивки в EEPROM */
-#define EEPROM_KS_ADR 68          /* адрес контрольной суммы настроек в EEPROM */
+//####### TX BOARD TYPE #######
+// 1 = TX 2G/Tiny original Board
+// 2 = RX Open/orange v2 Board in TX mode (PPM input on D3 chdnnel (5-th slot)
+// 3 = TX Open/orange v2 Board
+// 4 = TX Hawkeye (или хрен знает как правильно) от КНА
 
+#define TX_BOARD_TYPE 2
 
-unsigned int read_eeprom_uint(int address)
-{
- return (EEPROM.read(address) * 256) + EEPROM.read(address+1); 
-}
+// Время для входа в меню
+#define MENU_WAIT_TIME 9999
 
-unsigned char read_eeprom_uchar(int address)
-{
- return  EEPROM.read(address+REGS_EERPON_ADR); 
-}
+//######### TRANSMISSION VARIABLES ##########
 
+#define CARRIER_FREQUENCY  433075  // 433Mhz startup frequency !!! не менять
+#define HOPPING_STEP_SIZE  6 // 60kHz hopping steps
+#define HOPE_NUM          8 /* number of hope frequensies */ 
 
-void write_eeprom_uint(int address,unsigned int value)
-{
- EEPROM.write(address,value / 256);  
- EEPROM.write(address+1,value % 256);  
-}
+//###### HOPPING CHANNELS #######
+//Каналы прыжков (регистры 11-18) Select the hopping channels between 0-255
+//Frequency = CARRIER_FREQUENCY + (StepSize(60khz)* Channel_Number) 
+static unsigned char hop_list[HOPE_NUM] = {77,147,89,167,109,189,127,209};   // по умолчанию - мои частоты
 
-void write_eeprom_uchar(int address,unsigned char value)
-{
-  return  EEPROM.write(REGS_EERPON_ADR+address,value); 
-}
+// Четыре первых регистра настроек (S/N, номер Bind, поправка частоты, разрешение коррекции частоты и детектирования FS ретранслятора
+static unsigned char Regs4[7] = {99 ,72, 204, 1, 0, 0, 0 };    // последний бай - уровень отладки
+// Регистры управления мощносью (19-23): канал, мошность1 - мощность3 (0-7).
+static unsigned char  PowReg[4] =  { 8, 0, 2, 7 };  
 
+//###### SERIAL PORT SPEED #######
+#define SERIAL_BAUD_RATE 38400  // как у Эксперта
+#define REGS_NUM 42              // количестов отображаемых регистров настроек
 
-// Проверка целостности прошивки
-//
+// Параметры пакета
+#define RF_PACK_SIZE 16                 /* размер данных в пакете */
+#define RC_CHANNEL_COUNT 12             /* количество каналов управления и импульсов на PPM In */
 
-byte flash_check(void)
-{
-  unsigned int i,sign,ks=0;
-  
-  if(version[1] == 0) return 0;          // в режиме отладки не проверяем FLASH 
-  
-  for(i=0; i<FLASH_SIZE; i++)            // считаем сумму 
-      ks+=pgm_read_byte(i);
-  
-   sign=version[0] + (version[1]<<8);     // сигнатура из номера версии
-   i=read_eeprom_uint(FLASH_SIGN_ADR);    // прежняя сигнатура
-   if(sign != i) {                        // при несовпадении, пропишем новые значения
-     write_eeprom_uint(FLASH_SIGN_ADR,sign); 
-     write_eeprom_uint(FLASH_KS_ADR,ks);
-     return 1;                            // новая программа
-   } else {                               // в противном случае проверяем КС
-     i=read_eeprom_uint(FLASH_KS_ADR);
-     if(i != ks) return 255;               // признак разрушенной прошивки
-   }
-   
-   return 0;                               // все в порядке
-}    
+unsigned char RF_Tx_Buffer[RF_PACK_SIZE];  // буфер отсылаемого кадра
+unsigned char hopping_channel = 0;
+unsigned long time,start_time;   // текущее время в мс и время старта
+
+// unsigned char RF_Mode = 0;  /* для RFMки */
+signed char curTemperature=0;        // последняя температура, считанная из RFMки -64 ... +127
+signed char freqCorr=0;              // поправка к частоте кварца в зависимости от t (ppm)  
+unsigned char lastPower = 0;         // текущий режим мощности
+unsigned int maxDif=0;               // для контроля загруженности
+
+#define Available 0
+#define Transmit 1
+#define Transmitted 2
+#define Receive 3
+#define Received 4
 
 
-// Чтение всех настроек
-bool read_eeprom(void)
-{
-   byte i;
-   unsigned int ks=0;
-   
-   for(i=0; i<sizeof(Regs4); i++)    ks+=Regs4[i] = read_eeprom_uchar(i);  // первые 5 регистров
+#if (TX_BOARD_TYPE == 1)           // Expert Tiny module
+    //## RFM22BP Pinouts for Tx Tiny Board
+    #define SDO_pin 12
+    #define SDI_pin 11        
+    #define SCLK_pin 13 
+    #define SDN_pin 9
 
-   // hopping channels
-   for(i=0; i<HOPE_NUM; i++)  ks+=hop_list[i] = read_eeprom_uchar(i+11);
-  
-   // Регистры управления мощностью (19-23): канал, мошность1 - мощность3.
-   for(i=0; i<sizeof(PowReg); i++)    ks+=PowReg[i] = read_eeprom_uchar(i+19);
+    #define IRQ_pin 7
+    #define nSel_pin 10
+    #define IRQ_interrupt 
+    #define PPM_IN 8
+    #define USE_ICP1 // Use ICP1 in input capture mode
+    #define BUTTON 5
+        
+    #define  nIRQ_1 (PIND & 0x80)==0x80 //D7
+    #define  nIRQ_0 (PIND & 0x80)==0x00 //D7
+      
+    #define  nSEL_on PORTB |= 0x04  //B2
+    #define  nSEL_off PORTB &= 0xFB //B2
+    
+    #define  SCK_on PORTB |= _BV(5) // B5
+    #define  SCK_off PORTB &=~_BV(5) // B5
+    
+    #define  SDI_on PORTB |= _BV(3)  // B3
+    #define  SDI_off PORTB &=~_BV(3) // B3
+    
+    #define  SDO_1 (PINB & 0x10) == 0x10 //B4
+    #define  SDO_0 (PINB & 0x10) == 0x00 //B4
 
-   if(read_eeprom_uint(EEPROM_KS_ADR) != ks) return false;            // Checksum error
+    //#### Other interface pinouts ###
+    #define GREEN_LED_pin 6
+    #define RED_LED_pin 6
+    
+    #define Red_LED_ON   PORTD |= _BV(6);  
+    #define Red_LED_OFF  PORTD &= ~_BV(6); 
+    
+    #define Green_LED_ON  PORTD |= _BV(6); // проецируем
+    #define Green_LED_OFF PORTD &= ~_BV(6);    
 
-   return true;                                            // OK
-} 
+//    #define Serial_PPM_IN PORTB |= _BV(0) //Serial PPM IN
+#endif
 
-// Запись всех настроек
-void write_eeprom(void)
-{
-   byte i;
-   unsigned int ks=0;
-   
-   for(i=0; i<sizeof(Regs4); i++) {
-     write_eeprom_uchar(i,Regs4[i]);  
-     ks+=Regs4[i];  
-   }
 
-   // hopping channels
-   for(i=0; i<HOPE_NUM; i++) {
-     write_eeprom_uchar(i+11,hop_list[i]);   
-     ks+=hop_list[i];
-   }
-  
-   // Регистры управления мощностью (19-23): канал, мошность1 - мощность3.
-   for(i=0; i<sizeof(PowReg); i++) {
-     write_eeprom_uchar(i+19,PowReg[i]);  
-     ks+=PowReg[i];  
-   }
-   write_eeprom_uint(EEPROM_KS_ADR,ks);        // Write checksum
-} 
+#if (TX_BOARD_TYPE == 2)              // Orange reciever in transmittr mode
+      //### PINOUTS OF OpenLRS Rx V2 Board
+      #define SDO_pin A0
+      #define SDI_pin A1        
+      #define SCLK_pin A2 
+      #define IRQ_pin 2
+      #define nSel_pin 4
+      #define IRQ_interrupt 0
+      
+      #define PPM_IN 8
+      #define USE_ICP1           /* Use ICP1 in input capture mode */
+      #define BUTTON 6
 
-char etxt1[] PROGMEM = "FLASH ERROR!!! Can't work!";
-char etxt2[] PROGMEM = "Error read settings!";
+      #define  nIRQ_1 (PIND & 0x04)==0x04 //D2
+      #define  nIRQ_0 (PIND & 0x04)==0x00 //D2
+      
+      #define  nSEL_on PORTD |= 0x10 //D4
+      #define  nSEL_off PORTD &= 0xEF //D4
+      
+      #define  SCK_on PORTC |= 0x04 //C2
+      #define  SCK_off PORTC &= 0xFB //C2
+      
+      #define  SDI_on PORTC |= 0x02 //C1
+      #define  SDI_off PORTC &= 0xFD //C1
+      
+      #define  SDO_1 (PINC & 0x01) == 0x01 //C0
+      #define  SDO_0 (PINC & 0x01) == 0x00 //C0
 
-void eeprom_check(void)              // читаем и проверяем настройки из EEPROM, а также целостность программы
-{
-  byte b=flash_check();
+      //#### Other interface pinouts ###
+      #define GREEN_LED_pin 13
+      #define RED_LED_pin A3
+    
+      #define Red_LED_ON  PORTC |= _BV(3);
+      #define Red_LED_OFF  PORTC &= ~_BV(3);
+      
+      #define Green_LED_ON  PORTB |= _BV(5);
+      #define Green_LED_OFF  PORTB &= ~_BV(5);
+    
+#endif
 
-  if(b == 255) {             // совсем плохо, если программа разрушена, работать нельзя       
-      printlnPGM(etxt1);
-error_blink:
-      Red_LED_Blink(59999);  // долго мигаем красным, если КС не сошлась
-      return;
-  }    
-  
-  if(!read_eeprom()) {      // читаем настройки  
-    if(b == 1) {
-       makeAutoBind(255);   // если это первый запуск программы, производим сброс в дефлот, и автонастройку
-    } else {                   
-       printlnPGM(etxt2);
-       goto error_blink; 
-    }
-  }
-}  
+#if (TX_BOARD_TYPE == 3)              // Orange transmitter  через прерывания
+      //### PINOUTS OF OpenLRS Rx V2 Board
+      #define SDO_pin 9
+      #define SDI_pin 8        
+      #define SCLK_pin 7 
+      #define IRQ_pin 2
+      #define nSel_pin 4
+      #define IRQ_interrupt 0
+      
+      #define PPM_IN 3
+      #define BUTTON 11
 
+      #define  nIRQ_1 (PIND & 0x04)==0x04 //D2
+      #define  nIRQ_0 (PIND & 0x04)==0x00 //D2
+      
+      #define  nSEL_on PORTD |= 0x10 //D4
+      #define  nSEL_off PORTD &= 0xEF //D4
+      
+      #define  SCK_on PORTD |= 0x80 // D7
+      #define  SCK_off PORTD &= 0x7F //D7
+      
+      #define  SDI_on PORTB |= 0x01 //B0
+      #define  SDI_off PORTB &= 0xFE //B0
+      
+      #define  SDO_1 (PINB & 0x02) == 0x02 //B1
+      #define  SDO_0 (PINB & 0x02) == 0x00 //B1
+      
+
+      //#### Other interface pinouts ###
+      #define GREEN_LED_pin 13
+      #define RED_LED_pin 12
+    
+      #define Red_LED_ON  PORTB |= _BV(4);
+      #define Red_LED_OFF  PORTB &= ~_BV(4);
+      
+      #define Green_LED_ON  PORTB |= _BV(5);
+      #define Green_LED_OFF  PORTB &= ~_BV(5);
+
+     #define PPM_Pin_Interrupt_Setup  PCMSK2 = 0x08;PCICR|=(1<<PCIE2);
+     #define PPM_Signal_Interrupt PCINT2_vect
+     
+#endif
+
+
+#if (TX_BOARD_TYPE == 4)           // HawkEye TX module
+    #define PPM_IN 8
+    #define USE_ICP1              // Use ICP1 in input capture mode
+    #define BUTTON A0
+    #define RED_LED_pin 6
+    #define GREEN_LED_pin 5
+    
+    #define Red_LED_ON PORTD |= _BV(6)
+    #define Red_LED_OFF PORTD &= ~_BV(6)
+    #define Green_LED_ON PORTD |= _BV(5)
+    #define Green_LED_OFF PORTD &= ~_BV(5)
+    #define nIRQ_1 (PIND & 0x04)==0x04 //D2
+    #define nIRQ_0 (PIND & 0x04)==0x00 //D2
+    #define nSEL_on PORTD |= (1<<4) //D4
+    #define nSEL_off PORTD &= 0xEF //D4
+    #define SCK_on PORTB |= _BV(5) //B5
+    #define SCK_off PORTB &= ~_BV(5) //B5
+    #define SDI_on PORTB |= _BV(3) //B3
+    #define SDI_off PORTB &= ~_BV(3) //B3
+    #define SDO_1 (PINB & _BV(4)) == _BV(4) //B4
+    #define SDO_0 (PINB & _BV(4)) == 0x00 //B4
+    #define SDO_pin 12
+    #define SDI_pin 11
+    #define SCLK_pin 13
+    #define SDN_pin 9
+    #define IRQ_pin 2
+    #define nSel_pin 4
+    #define IRQ_interrupt 0
+#endif
+
+#if (TX_BOARD_TYPE == 5)              // Orange reciever тест через прерывания D3
+      //### PINOUTS OF OpenLRS Rx V2 Board
+      #define SDO_pin A0
+      #define SDI_pin A1        
+      #define SCLK_pin A2 
+      #define IRQ_pin 2
+      #define nSel_pin 4
+      #define IRQ_interrupt 0
+      
+      #define PPM_IN 3
+      #define BUTTON 6
+
+      #define  nIRQ_1 (PIND & 0x04)==0x04 //D2
+      #define  nIRQ_0 (PIND & 0x04)==0x00 //D2
+      
+      #define  nSEL_on PORTD |= 0x10 //D4
+      #define  nSEL_off PORTD &= 0xEF //D4
+      
+      #define  SCK_on PORTC |= 0x04 //C2
+      #define  SCK_off PORTC &= 0xFB //C2
+      
+      #define  SDI_on PORTC |= 0x02 //C1
+      #define  SDI_off PORTC &= 0xFD //C1
+      
+      #define  SDO_1 (PINC & 0x01) == 0x01 //C0
+      #define  SDO_0 (PINC & 0x01) == 0x00 //C0
+      
+
+      //#### Other interface pinouts ###
+      #define GREEN_LED_pin 13
+      #define RED_LED_pin A3
+    
+      #define Red_LED_ON  PORTC |= _BV(3);
+      #define Red_LED_OFF  PORTC &= ~_BV(3);
+      
+      #define Green_LED_ON  PORTB |= _BV(5);
+      #define Green_LED_OFF  PORTB &= ~_BV(5);
+
+     #define PPM_Pin_Interrupt_Setup  PCMSK2 = 0x08;PCICR|=(1<<PCIE2);
+     #define PPM_Signal_Interrupt PCINT2_vect
+     
+#endif
+
+
+// Functions & variable declarations
+
+void RF22B_init_parameter(void);
+unsigned char _spi_read(unsigned char address); 
+void to_sleep_mode(void);
+void ppmLoop(unsigned char n=12);
+extern unsigned int mppmDif,maxDif;
+extern unsigned int PPM[];     // текущие длительности канальных импульсов
+extern unsigned char ppmAge;   // age of PPM data
+void printlnPGM(char *adr, char ln=1);   // печать строки из памяти программы ln - перевод строки
+void _spi_write(unsigned char, unsigned char);  // Gfsk,  fd[8] =0, no invert for Tx/Rx data, fifo mode, txclk -->gpio 
 
