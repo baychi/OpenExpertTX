@@ -11,14 +11,13 @@
 
 // Функции меню терминала
 //
-static unsigned char regs[] = {1, 2, 3, 4, 5, 6, 11,12,13,14,15,16,17,18,19,20,21,22 }; // номера отображаемых регистров
-
+static char regs[] PROGMEM = {1, 2, 3, 4, 5, 6, 11,12,13,14,15,16,17,18,19,20,21,22 }; // номера отображаемых регистров
 static char help[][32] PROGMEM = {
   "Bind N",
   "Freq correction const",
   "Term corr enable",
   "FS check enable",
-  "11 bit/10 ch enable",
+  "11bit/10ch (1=yes, 2=Futaba)",
   "Debug out (1-PPM, 2-perf.)",
   "Hop F1",
   "Hop F2",
@@ -102,14 +101,15 @@ void getStr(char str[])             // получение строки, заве
 byte margin(byte v)
 {
    if(v < 10) return 0; 
-   else if(v>71) return 61;
+   else if(v>70) return 60;
 
    return  v-10;
 }
+
 void print3(unsigned char val)  // печать 3-цифр с выравниваем пробелами
 {
-  if(val < 10) Serial.print("  ");
-  else if(val <100) Serial.write(' ');
+  if(val < 100) Serial.write(' ');
+  if(val < 10) Serial.write(' ');
   Serial.print(val);
   Serial.write(' ');
 }  
@@ -154,9 +154,7 @@ void showNoise(char str[])             // отображаем уровень ш
        if(k<rMin) rMin=k;         // min/max calc
        if(k>rMax) rMax=k;
      }
-     if(i < 10) Serial.print("  ");
-     else if(i <100) Serial.write(' ');
-     Serial.print(i);
+     print3(i);
      k=':';
      for(j=0; j<HOPE_NUM; j++) {   // отметим свои частоты
         if(hop_list[j] == i) {
@@ -199,7 +197,7 @@ void showRegs(void)         // показать значения регистр�
   
   printlnPGM(mtxt3);
   for(int i=1; i<=REGS_NUM; i++) {
-    if(regs[j] == i) {
+    if(pgm_read_byte(regs+j) == i) {
       Serial.print(i);
       Serial.write('=');
       Serial.print(read_eeprom_uchar(i));
