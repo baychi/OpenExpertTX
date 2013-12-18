@@ -15,7 +15,7 @@ static char regs[] PROGMEM = {1, 2, 3, 4, 5, 6, 11,12,13,14,15,16,17,18,19,20,21
 static char help[][32] PROGMEM = {
   "Bind N",
   "Freq correction const",
-  "Term corr enable",
+  "Term corr.(0=no, 1=+, 255=-)",
   "FS check enable",
   "11bit/10ch (1=yes, 2=Futaba)",
   "Debug out (1-PPM, 2-perf.)",
@@ -195,7 +195,8 @@ void showRegs(void)         // показать значения регистр�
 {
   unsigned char i,j=0,k;
   
-  printlnPGM(mtxt3);
+  printlnPGM(mtxt3,0); printlnPGM(htxt2+14,0); Serial.println(version[0]);
+  
   for(int i=1; i<=REGS_NUM; i++) {
     if(pgm_read_byte(regs+j) == i) {
       Serial.print(i);
