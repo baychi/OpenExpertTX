@@ -481,6 +481,7 @@ void getTemper (void)
    else if(curTemperature > 30) freqCorr=-(curTemperature-30)/7;        // область жары
    else freqCorr=0;
 #endif
+   if(Regs4[3] == 255) freqCorr=-freqCorr; // отрицательная поправка
    ppmLoop();
 }  
 
