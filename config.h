@@ -7,7 +7,7 @@
 
 // Версия и номер компиляции. Используется для проверки целостности программы
 // При модификации программы необходимо изменить одно из этих чисел 
-unsigned char version[] = { 6, 1 };
+unsigned char version[] = { 7, 1 };
 
 //####### TX BOARD TYPE #######
 // 1 = TX 2G/Tiny original Board
@@ -15,7 +15,7 @@ unsigned char version[] = { 6, 1 };
 // 3 = TX Open/orange v2 Board
 // 4 = TX Hawkeye (или хрен знает как правильно) от КНА
 
-#define TX_BOARD_TYPE 2
+#define TX_BOARD_TYPE 1
 
 // Время для входа в меню
 #define MENU_WAIT_TIME 9999
@@ -100,11 +100,17 @@ unsigned int maxDif=0;               // для контроля загружен
     #define Green_LED_ON  PORTD |= _BV(6); // проецируем
     #define Green_LED_OFF PORTD &= ~_BV(6);    
 
+// Аппаратный переключатель мощности
+    #define SW1_IN A2  // Power switch 1 on 25 pin
+    #define SW2_IN A3  // Power switch 2 on 26 pin  
+    #define SW1_IS_ON (PINC & 0x04) == 0x00  // проверка sw1 
+    #define SW2_IS_ON (PINC & 0x08) == 0x00  // проверка sw2 
+
 //    #define Serial_PPM_IN PORTB |= _BV(0) //Serial PPM IN
 #endif
 
 
-#if (TX_BOARD_TYPE == 2)              // Orange reciever in transmittr mode
+#if (TX_BOARD_TYPE == 2)              // Orange reciever in transmitter mode
       //### PINOUTS OF OpenLRS Rx V2 Board
       #define SDO_pin A0
       #define SDI_pin A1        
@@ -142,6 +148,12 @@ unsigned int maxDif=0;               // для контроля загружен
       #define Green_LED_ON  PORTB |= _BV(5);
       #define Green_LED_OFF  PORTB &= ~_BV(5);
     
+// Аппаратный переключатель мощности
+    #define SW1_IN D5  // Power switch 1 on 9 pin
+    #define SW2_IN D6  // Power switch 2 on 10 pin  
+    #define SW1_IS_ON (PIND & 0x20) == 0x00  // проверка sw1 
+    #define SW2_IS_ON (PIND & 0x40) == 0x00  // проверка sw2 
+
 #endif
 
 #if (TX_BOARD_TYPE == 3)              // Orange transmitter  через прерывания
@@ -171,7 +183,6 @@ unsigned int maxDif=0;               // для контроля загружен
       #define  SDO_1 (PINB & 0x02) == 0x02 //B1
       #define  SDO_0 (PINB & 0x02) == 0x00 //B1
       
-
       //#### Other interface pinouts ###
       #define GREEN_LED_pin 13
       #define RED_LED_pin 12
@@ -184,6 +195,12 @@ unsigned int maxDif=0;               // для контроля загружен
 
      #define PPM_Pin_Interrupt_Setup  PCMSK2 = 0x08;PCICR|=(1<<PCIE2);
      #define PPM_Signal_Interrupt PCINT2_vect
+
+// Аппаратный переключатель мощности
+    #define SW1_IN A2  // Power switch 1 on 25 pin
+    #define SW2_IN A3  // Power switch 2 on 26 pin  
+    #define SW1_IS_ON (PINC & 0x04) == 0x00  // проверка sw1 
+    #define SW2_IS_ON (PINC & 0x08) == 0x00  // проверка sw2 
      
 #endif
 
@@ -216,6 +233,12 @@ unsigned int maxDif=0;               // для контроля загружен
     #define IRQ_pin 2
     #define nSel_pin 4
     #define IRQ_interrupt 0
+
+// Аппаратный переключатель мощности
+    #define SW1_IN A1  // Power switch 1 on 24 pin
+    #define SW2_IN A2  // Power switch 2 on 25 pin  
+    #define SW1_IS_ON (PINC & 0x02) == 0x00  // проверка sw1 
+    #define SW2_IS_ON (PINC & 0x04) == 0x00  // проверка sw2 
 #endif
 
 #if (TX_BOARD_TYPE == 5)              // Orange reciever тест через прерывания D3
