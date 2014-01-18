@@ -340,7 +340,6 @@ void prepFB(byte idx)
   word pwm;
   byte i;
   
-  
   if(Regs4[5] == 3) pwm=PPM[10-chCntr++];  // в режиме 3 каналы передаются в обратном порядке
   else pwm=PPM[chCntr++];             // берем очередной канал 
   
@@ -384,36 +383,42 @@ void sendOnFlyFutaba(void)                         // отправка на ле
   }
 }
 
-bool to_tx_mode(void)                  // Подготовка и отсылка пакета на лету
-{ 
-  byte i;
+byte setPower(byte i=255)           // настройка мощности для FRMки
+{
   word pwm;
 
   to_ready_mode();
  
 // Управление мощностью
 //
-  if(PowReg[0] > 0 && PowReg[0] <= 13) { // если задан канал 1-12
-    cli();
-    pwm=PPM[PowReg[0]-1];                // берем длительность импульса
-    sei();
-    if(pwm < 682) i=PowReg[1];           // и определяем, какую мощность требуют 
-    else if(pwm >= 1364) i=PowReg[3];
-    else i=PowReg[2];
-  } else if(PowReg[0] == 0) {           // аппаратный переключатель на 3-х позиционном тумблере
-    if(SW1_IS_ON) i=PowReg[1];          // внизу - режим минмальной мощности
-    else if(SW2_IS_ON) i=PowReg[3];     // вверху- режим максимальной мощности
-    else i=PowReg[2];                   // в середине - средняя мощность
-  } else i=PowReg[3];                   // если не задано, используем макс. мощность  
-  
-  i=i&7;
+  if(i > 7) {                       // еслм не задано явно
+    if(PowReg[0] > 0 && PowReg[0] <= 13) { // если задан канал 1-13
+      pwm=PPM[PowReg[0]-1];                // берем длительность импульса
+      if(pwm < 682) i=PowReg[1];           // и определяем, какую мощность требуют 
+      else if(pwm >= 1364) i=PowReg[3];
+      else i=PowReg[2];
+    } else if(PowReg[0] == 0) {           // аппаратный переключатель на 3-х позиционном тумблере
+      if(SW1_IS_ON) i=PowReg[1];          // внизу - режим минмальной мощности
+      else if(SW2_IS_ON) i=PowReg[3];     // вверху- режим максимальной мощности
+      else i=PowReg[2];                   // в середине - средняя мощность
+    } else i=PowReg[3];                   // если не задано, используем макс. мощность  
+  }
+  i&=7; 
+  _spi_write(0x6d, i+8);                // Вводим мощность в RFMку 
+  return i;
+}
+
+bool to_tx_mode(void)                  // Подготовка и отсылка пакета на лету
+{ 
+  byte i;
+
+  i=setPower();
   if(++lastPower > (8-i)*3) {
     lastPower=0;                        // мигаем с частотой пропорциональной мощности
-     Green_LED_ON;
+    Green_LED_ON;
   }
-  _spi_write(0x6d, i+8);                // Вводим мощность в RFMку 
 
-  _spi_write(0x08, 0x03);    // disABLE AUTO TX MODE, enable multi packet clear fifo 
+  _spi_write(0x08, 0x03);               // disABLE AUTO TX MODE, enable multi packet clear fifo 
   _spi_write(0x08, 0x00);   
   
   _spi_write(0x7f,(RF_Tx_Buffer[0]=Regs4[1]));       // отсылаем номер линка в FIFO
@@ -617,4 +622,66 @@ repeat:
   Regs4[1]=i;
 
   write_eeprom();         // запоминаем настройки 
+}
+
+// Непрерывный режим излучения на заданной частоте
+char ftxt1[] PROGMEM = "Transmiting: F=4";
+char ftxt2[] PROGMEM = " MHz, Power(0-7)=";
+char ftxt3[] PROGMEM = " Fcorr(<>)= ";
+char ftxt4[] PROGMEM = ". Press ESC to stop...";
+
+void freqTest(char str[])             // отображаем уровень шумов по каналам
+{
+  word fCh=0;
+  byte i,p=255;
+
+  fCh=atoi(str+1);           // считаем параметры, если есть в виде Nbeg-end
+  if(fCh >= 0 && fCh <= 255) {
+    
+    RF22B_init_parameter();     // подготовим RFMку 
+    _spi_write(0x70, 0x2C);    // disable manchester
+    _spi_write(0x30, 0x00);    // disable packet handling
+
+    _spi_write(0x71, 0x12);   // trclk=[00] no clock, dtmod=[01] direct using SPI, fd8=0 eninv=0 modtyp=[10] FSK
+    _spi_write(0x72, 0x02);   // deviation 2*625Hz == 1.25kHz
+
+    _spi_write(0x73, 0x00);
+    _spi_write(0x74, 0x00);    // no offset
+    _spi_write(0x79, fCh);     // freq hannel
+    fCh=fCh*60+75;             // переведем в килогерцы
+
+printMode:    
+    printlnPGM(ftxt1,0);       // печатаем режим  
+    Serial.print(fCh/1000+33); Serial.write('.'); 
+    Serial.print(fCh%1000);
+    p=setPower(p);              // берем можность по умолчанию
+    delay(10);
+    Green_LED_ON;                // сигнализируем о начале
+    _spi_write(0x07, RF22B_PWRSTATE_TX);              // старт передачи
+
+    printlnPGM(ftxt2,0); Serial.print(p);
+    printlnPGM(ftxt3,0); Serial.print(Regs4[2]);
+    printlnPGM(ftxt4,0);
+
+    while(Serial.available() == 0) {
+      wdt_reset();               //  поддержка сторожевого таймера
+      delayMicroseconds(999);
+      SDI_on;
+      delayMicroseconds(999);
+      SDI_off;
+    }
+    i=Serial.read();
+    Serial.println();
+    _spi_write(0x07, RF22B_PWRSTATE_READY);
+    Green_LED_OFF;                // сигнализируем о завершении
+
+    if(i == 27)  return;          // выход по Esc
+
+    if(i == ',' || i == '.') {    // меняем поправку частоты
+      if(i == '.') Regs4[2]++; 
+      else Regs4[2]--;
+      _spi_write(0x09, Regs4[2]);     // точная подстройка частоты 
+    } else  if(i >= '0' && i <= '7') p=i-'0'; // меняем мощность
+    goto printMode;
+  }
 }
