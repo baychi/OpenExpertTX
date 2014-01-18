@@ -297,3 +297,4 @@ extern unsigned char ppmAge;   // age of PPM data
 void printlnPGM(char *adr, char ln=1);   // печать строки из памяти программы ln - перевод строки
 void _spi_write(unsigned char, unsigned char);  // Gfsk,  fd[8] =0, no invert for Tx/Rx data, fifo mode, txclk -->gpio 
 
+
