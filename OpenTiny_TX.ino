@@ -72,6 +72,11 @@ void setup(void)
    pinMode(BUTTON, INPUT);   //Buton
    digitalWrite(BUTTON, HIGH);
 
+   pinMode(SW1_IN, INPUT);   // ключ 1
+   digitalWrite(SW1_IN, HIGH);
+   pinMode(SW2_IN, INPUT);   // ключ 2
+   digitalWrite(SW2_IN, HIGH);
+
    pinMode(PPM_IN, INPUT);   //PPM from TX
    digitalWrite(PPM_IN, HIGH); // enable pullup for TX:s with open collector output
 
@@ -163,4 +168,3 @@ extern byte prevFS;
     }
   }  
 }
-
