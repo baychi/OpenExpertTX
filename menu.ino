@@ -185,9 +185,10 @@ void showNoise(char str[])             // отображаем уровень ш
   }
 }
 
+    
 // Перенесем текст меню в память программ
 char mtxt1[] PROGMEM = "\n\rTo Enter MENU Press ENTER";
-char mtxt2[] PROGMEM = "Type Reg and press ENTER, type Value and press ENTER (q=Quit; Nx-y = Show noise)";
+char mtxt2[] PROGMEM = "Type Reg and press ENTER, type Value and press ENTER (q=Quit; Nx-y=Show noise)";
 char mtxt3[] PROGMEM = "\r\nRg=Val \tComments -----------------------";
 char mtxt4[] PROGMEM = "Make new bind? Are you sure(y/n)?";
 
@@ -229,6 +230,10 @@ rep:
 
     if(str[0] == 'n' || str[0] == 'N') {  // отсканировать и отобразить уровень шума 
        showNoise(str);
+       goto rep;
+    }
+    if(str[0] == 'f' || str[0] == 'F') {  // непрерывная передача на канале F для ностройки частоты по приборам
+       freqTest(str);
        goto rep;
     }
     if(str[0] == 'r' && str[1] == 'e' && str[2] == 'b' && str[3] == 'i' && str[4] == 'n' && str[5] == 'd') { // rebinding
