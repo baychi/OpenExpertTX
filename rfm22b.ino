@@ -340,10 +340,13 @@ void prepFB(byte idx)
   word pwm;
   byte i;
   
-  pwm=PPM[chCntr++];             // берем очередной канал 
-  for(i=0; i<11; i++) {          // переносим его 11 бит в буфер отправки
+  
+  if(Regs4[5] == 3) pwm=PPM[10-chCntr++];  // в режиме 3 каналы передаются в обратном порядке
+  else pwm=PPM[chCntr++];             // берем очередной канал 
+  
+  for(i=0; i<11; i++) {               // переносим его 11 бит в буфер отправки
     if(pwm & 1) curB |= bitMask;
-    if(bitMask == 0x80) {        // дошли до конца байта
+    if(bitMask == 0x80) {             // дошли до конца байта
        RF_Tx_Buffer[++byteCntr]=curB; // кладем его в буфер
        curB=0; bitMask=1;             // и начинаем новый
      } else bitMask+=bitMask;     // двигаем маску 
@@ -397,6 +400,10 @@ bool to_tx_mode(void)                  // Подготовка и отсылка
     if(pwm < 682) i=PowReg[1];           // и определяем, какую мощность требуют 
     else if(pwm >= 1364) i=PowReg[3];
     else i=PowReg[2];
+  } else if(PowReg[0] == 0) {           // аппаратный переключатель на 3-х позиционном тумблере
+    if(SW1_IS_ON) i=PowReg[1];          // внизу - режим минмальной мощности
+    else if(SW2_IS_ON) i=PowReg[3];     // вверху- режим максимальной мощности
+    else i=PowReg[2];                   // в середине - средняя мощность
   } else i=PowReg[3];                   // если не задано, используем макс. мощность  
   
   i=i&7;
@@ -404,7 +411,7 @@ bool to_tx_mode(void)                  // Подготовка и отсылка
     lastPower=0;                        // мигаем с частотой пропорциональной мощности
      Green_LED_ON;
   }
-  _spi_write(0x6d, i+8);                  // Вводим мощность в RFMку 
+  _spi_write(0x6d, i+8);                // Вводим мощность в RFMку 
 
   _spi_write(0x08, 0x03);    // disABLE AUTO TX MODE, enable multi packet clear fifo 
   _spi_write(0x08, 0x00);   
@@ -420,7 +427,7 @@ bool to_tx_mode(void)                  // Подготовка и отсылка
   _spi_write(0x07, RF22B_PWRSTATE_TX);              // старт передачи
   lastSent += 31500;                                // формируем момент следующей отправки пакета
 
-  if(Regs4[5] == 2) sendOnFlyFutaba();
+  if(Regs4[5] >= 2) sendOnFlyFutaba();
   else sendOnFlyStd(); 
   
   if(nIRQ_1) {                                     // Если не дождались отсылки
