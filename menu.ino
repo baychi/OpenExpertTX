@@ -17,7 +17,7 @@ static char help[][32] PROGMEM = {
   "Freq correction const",
   "Term corr.(0=no, 1=+, 255=-)",
   "FS check enable",
-  "11bit/10ch (1=yes, 2=Futaba)",
+  "11bit/10ch(1=yes,2/3=Futaba)",
   "Debug out (1-PPM, 2-perf.)",
   "Hop F1",
   "Hop F2",
@@ -27,7 +27,7 @@ static char help[][32] PROGMEM = {
   "Hop F6",
   "Hop F7",
   "Hop F8",
-  "Power switch chan (1-13,0=off)",
+  "Power switch chan (1-13,0=SW)",
   "Power min (0-7)",  
   "Power middle (0-7)",
   "Power max (0-7)"
