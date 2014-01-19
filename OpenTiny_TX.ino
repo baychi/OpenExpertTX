@@ -54,6 +54,12 @@ void setup(void)
    pinMode(SDN_pin, OUTPUT); //SDn
    digitalWrite(SDN_pin, LOW);
 #endif
+
+#if(RFM_POWER_PIN != 0)    
+   pinMode(RFM_POWER_PIN, OUTPUT); // управление питанием RFMки
+   RFM_POWER_MIN;
+#endif
+
    pinMode(SDO_pin, INPUT); //SDO
    pinMode(SDI_pin, OUTPUT); //SDI        
    pinMode(SCLK_pin, OUTPUT); //SCLK
@@ -168,4 +174,3 @@ extern byte prevFS;
     }
   }  
 }
-
