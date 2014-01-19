@@ -211,6 +211,9 @@ unsigned int maxDif=0;               // для контроля загружен
     #define BUTTON A0
     #define RED_LED_pin 6
     #define GREEN_LED_pin 5
+    #define RFM_POWER_PIN 7      // цепь управления питанием RFMки - 11я ножка
+    #define RFM_POWER_MIN PORTD |= 0x80      // понизить мощу
+    #define RFM_POWER_MAX PORTD &= 0x7f      // повысить мощу
     
     #define Red_LED_ON PORTD |= _BV(6)
     #define Red_LED_OFF PORTD &= ~_BV(6)
@@ -296,5 +299,4 @@ extern unsigned int PPM[];     // текущие длительности кан
 extern unsigned char ppmAge;   // age of PPM data
 void printlnPGM(char *adr, char ln=1);   // печать строки из памяти программы ln - перевод строки
 void _spi_write(unsigned char, unsigned char);  // Gfsk,  fd[8] =0, no invert for Tx/Rx data, fifo mode, txclk -->gpio 
-
 
