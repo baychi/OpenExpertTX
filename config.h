@@ -149,8 +149,8 @@ unsigned int maxDif=0;               // для контроля загружен
       #define Green_LED_OFF  PORTB &= ~_BV(5);
     
 // Аппаратный переключатель мощности
-    #define SW1_IN D5  // Power switch 1 on 9 pin
-    #define SW2_IN D6  // Power switch 2 on 10 pin  
+    #define SW1_IN 5   // Power switch 1 on 9 pin
+    #define SW2_IN 6   // Power switch 2 on 10 pin  
     #define SW1_IS_ON (PIND & 0x20) == 0x00  // проверка sw1 
     #define SW2_IS_ON (PIND & 0x40) == 0x00  // проверка sw2 
 
