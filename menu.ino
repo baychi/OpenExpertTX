@@ -28,9 +28,9 @@ static char help[][32] PROGMEM = {
   "Hop F7",
   "Hop F8",
   "Power switch chan (1-13,0=SW)",
-  "Power min (0-7)",  
-  "Power middle (0-7)",
-  "Power max (0-7)"
+  "Power min (0-7, +128=highU)",  
+  "Power middle (0-7,+128=highU)",
+  "Power max (0-7, +128=highU)"
 };  
   
 char htxt1[] PROGMEM = "\r\nBaychi soft 2013";
