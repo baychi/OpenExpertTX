@@ -216,7 +216,6 @@ void RF22B_init_parameter(void)
   _spi_write(0x79, 0x00);    // no hopping (1-st channel)
   _spi_write(0x7a, HOPPING_STEP_SIZE);    // 60khz step size (10khz x value) // no hopping 
 
-  _spi_write(0x71, 0x00);  // Gfsk,  fd[8] =0, no invert for Tx/Rx data, fifo mode, txclk -->gpio 
   _spi_write(0x71, 0x23);  // Gfsk,  fd[8] =0, no invert for Tx/Rx data, fifo mode, txclk -->gpio 
   _spi_write(0x72, 0x0E);  // frequency deviation setting to 8750
 
@@ -340,7 +339,7 @@ void prepFB(byte idx)
   word pwm;
   byte i;
   
-  if(Regs4[5] == 3) pwm=PPM[10-chCntr++];  // в режиме 3 каналы передаются в обратном порядке
+  if(Regs4[5] == 3) pwm=PPM[9-chCntr++];  // в режиме 3 каналы передаются в обратном порядке
   else pwm=PPM[chCntr++];             // берем очередной канал 
   
   for(i=0; i<11; i++) {               // переносим его 11 бит в буфер отправки
