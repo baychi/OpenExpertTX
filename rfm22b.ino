@@ -658,7 +658,6 @@ void freqTest(char str[])             // отображаем уровень ш�
 printMode:    
     printlnPGM(ftxt1,0);       // печатаем режим  
     Serial.print(fCh/1000+33); Serial.write('.'); 
-    if(fCh < 100) Serial.write('0');
     if((fCh%1000) < 100) Serial.write('0');
     Serial.print(fCh%1000);
     p=setPower(p);              // берем можность по умолчанию
