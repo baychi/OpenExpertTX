@@ -7,13 +7,14 @@
 
 // Версия и номер компиляции. Используется для проверки целостности программы
 // При модификации программы необходимо изменить одно из этих чисел 
-unsigned char version[] = { 7, 7 };
+unsigned char version[] = { 7, 8 };
 
 //####### TX BOARD TYPE #######
 // 1 = TX 2G/Tiny original Board
 // 2 = RX Open/orange v2 Board in TX mode (PPM input on D3 chdnnel (5-th slot)
 // 3 = TX Open/orange v2 Board
-// 4 = TX Hawkeye (или хрен знает как правильно) от КНА
+// 23 = TX Open/orange v2 модифицированная под работу через ICP (http://forum.rcdesign.ru/f90/thread341906-20.html#post4942789)
+// 4 = TX HawkEye  от КНА
 
 #define TX_BOARD_TYPE 1
 
@@ -184,14 +185,14 @@ unsigned int maxDif=0;               // для контроля загружен
       #define  SDO_0 (PINB & 0x02) == 0x00 //B1
       
       //#### Other interface pinouts ###
-      #define GREEN_LED_pin 13
-      #define RED_LED_pin 12
+      #define GREEN_LED_pin 12
+      #define RED_LED_pin 13
     
-      #define Red_LED_ON  PORTB |= _BV(4);
-      #define Red_LED_OFF  PORTB &= ~_BV(4);
+      #define Red_LED_ON  PORTB |= _BV(5);
+      #define Red_LED_OFF  PORTB &= ~_BV(5);
       
-      #define Green_LED_ON  PORTB |= _BV(5);
-      #define Green_LED_OFF  PORTB &= ~_BV(5);
+      #define Green_LED_ON  PORTB |= _BV(4);
+      #define Green_LED_OFF  PORTB &= ~_BV(4);
 
      #define PPM_Pin_Interrupt_Setup  PCMSK2 = 0x08;PCICR|=(1<<PCIE2);
      #define PPM_Signal_Interrupt PCINT2_vect
@@ -287,7 +288,50 @@ unsigned int maxDif=0;               // для контроля загружен
      
 #endif
 
+#if (TX_BOARD_TYPE == 23)              // Modifyed (PPM on ICP pin) TX Open/orange v2 Board 
+      #define SDO_pin 9
+      #define SDI_pin A1
+      #define SCLK_pin 7 
+      #define IRQ_pin 2
+      #define nSel_pin 4
+      #define IRQ_interrupt 0
+      
+      #define PPM_IN 8
+      #define USE_ICP1
+      #define BUTTON 11
 
+      #define  nIRQ_1 (PIND & 0x04)==0x04 //D2
+      #define  nIRQ_0 (PIND & 0x04)==0x00 //D2
+      
+      #define  nSEL_on PORTD |= 0x10 //D4
+      #define  nSEL_off PORTD &= 0xEF //D4
+      
+      #define  SCK_on PORTD |= 0x80 // D7
+      #define  SCK_off PORTD &= 0x7F //D7
+      
+      #define  SDI_on PORTC |= 0x02 //C1
+      #define  SDI_off PORTC &= 0xFD //C1
+      
+      #define  SDO_1 (PINB & 0x02) == 0x02 //B1
+      #define  SDO_0 (PINB & 0x02) == 0x00 //B1
+      
+      //#### Other interface pinouts ###
+      #define GREEN_LED_pin 12
+      #define RED_LED_pin 13
+    
+      #define Red_LED_ON  PORTB |= _BV(5);
+      #define Red_LED_OFF  PORTB &= ~_BV(5);
+      
+      #define Green_LED_ON  PORTB |= _BV(4);
+      #define Green_LED_OFF  PORTB &= ~_BV(4);
+
+// Аппаратный переключатель мощности
+    #define SW1_IN A2  // Power switch 1 on 25 pin
+    #define SW2_IN A3  // Power switch 2 on 26 pin  
+    #define SW1_IS_ON (PINC & 0x04) == 0x00  // проверка sw1 
+    #define SW2_IS_ON (PINC & 0x08) == 0x00  // проверка sw2 
+     
+#endif
 // Functions & variable declarations
 
 void RF22B_init_parameter(void);
