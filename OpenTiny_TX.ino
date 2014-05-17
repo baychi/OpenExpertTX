@@ -50,19 +50,26 @@ void checkFS(bool led=true)        // проверка нажатия кнопо
 
 void setup(void)
 {
-#if(SDN_pin != 0)    
+#ifdef SDN_pin    
    pinMode(SDN_pin, OUTPUT); //SDn
    digitalWrite(SDN_pin, LOW);
 #endif
 
-#if(RFM_POWER_PIN != 0)    
+#ifdef RFM_POWER_PIN    
    pinMode(RFM_POWER_PIN, OUTPUT); // управление питанием RFMки
    RFM_POWER_MIN;
 #endif
 
+#if(TX_BOARD_TYPE == 6)            // Для Deluxe номера выводов почему-то не определены
+   DDRB |= (1<<DDB1); // SCK PB1 output
+   DDRB |= (1<<DDB2); // SDI/MOSI PB2 output
+   DDRB &= ~(1<<DDB3); // SDO/MISO PB3 input
+#else
    pinMode(SDO_pin, INPUT); //SDO
    pinMode(SDI_pin, OUTPUT); //SDI        
    pinMode(SCLK_pin, OUTPUT); //SCLK
+#endif
+
    pinMode(IRQ_pin, INPUT); //IRQ
    digitalWrite(IRQ_pin, HIGH);
    pinMode(nSel_pin, OUTPUT); //nSEL
@@ -78,7 +85,11 @@ void setup(void)
    pinMode(BUTTON, INPUT);   //Buton
    digitalWrite(BUTTON, HIGH);
 
-#if(SW1_IN!=0)
+#if (TX_BOARD_TYPE == 5)              // Только для Expert 2G board
+  pinMode(PA_VOUT_PIN, OUTPUT); 
+#endif
+
+#ifdef SW1_IN
    pinMode(SW1_IN, INPUT);   // ключ 1
    digitalWrite(SW1_IN, HIGH);
    pinMode(SW2_IN, INPUT);   // ключ 2
@@ -88,7 +99,7 @@ void setup(void)
    pinMode(PPM_IN, INPUT);   //PPM from TX
    digitalWrite(PPM_IN, HIGH); // enable pullup for TX:s with open collector output
 
-   Serial.begin(SERIAL_BAUD_RATE);
+   Terminal.begin(SERIAL_BAUD_RATE);
 
    setupPPMinput();
    EIMSK &=~1;          // запрещаем INT0 
@@ -113,7 +124,7 @@ void loop(void)        // главный фоновый цикл
   rx_reset();
   ppmAge = 255;
 
-  Serial.println();
+  Terminal.println();
   showState();     // отображаем режим и дебуг информацию 
 
   for(i=0; i<32; i++) {   // ждем старта RFM ки до 3-х секунд 
@@ -122,6 +133,10 @@ void loop(void)        // главный фоновый цикл
     RF22B_init_parameter();
     delay(99);          
   }
+
+#if (TX_BOARD_TYPE == 5)              // Только для Expert 2G board
+  analogWrite(5,PowReg[4]);           // установим напряжение для УМ
+#endif
 
   rx_reset();
 
@@ -135,11 +150,14 @@ void loop(void)        // главный фоновый цикл
 
     if(checkMenu()) {          // проверяем на вход в меню
        doMenu(); 
+#if (TX_BOARD_TYPE == 5)              // Только для Expert 2G board
+  analogWrite(5,PowReg[4]);           // установим напряжение для УМ
+#endif
        lastSent=micros(); 
     }
     
     if (_spi_read(0x0C) == 0) {     // detect the locked module and reboot
-      Serial.println("RFM lock");
+      Terminal.println("RFM lock");
       Green_LED_ON;
       Sleep(249);
 re_init:
