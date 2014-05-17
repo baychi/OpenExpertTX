@@ -332,10 +332,10 @@ void showState(void)   // Отображение состояния после �
 
   switch(showStage) {
   case 1:                       // вывод состояния
-     Serial.write('\r');
-     if(FSdetect) Serial.print("Stop:");
-     else if(ppmAge == 255) Serial.print("Waiting start:");
-     else if(ppmAge > 5) Serial.print("Input lost:");
+     Terminal.write('\r');
+     if(FSdetect) Terminal.print("Stop:");
+     else if(ppmAge == 255) Terminal.print("Waiting start:");
+     else if(ppmAge > 5) Terminal.print("Input lost:");
      else {
        if(!nchan) {            // один раз подстчитаем каналы PPM
          for(i=0; i<RC_CHANNEL_COUNT; i++) {
@@ -343,35 +343,35 @@ void showState(void)   // Отображение состояния после �
          }
          ppmLoop();
        } 
-       if(ppmMicroPPM == 255) Serial.print("SBUS");
+       if(ppmMicroPPM == 255) Terminal.print("SBUS");
        else {
-         if(ppmMicroPPM) Serial.print("Fut750u ");
-         Serial.print("PPM");   ppmLoop();
-         Serial.print(nchan); 
+         if(ppmMicroPPM) Terminal.print("Fut750u ");
+         Terminal.print("PPM");   ppmLoop();
+         Terminal.print(nchan); 
        }
-       Serial.print(" mode:");
+       Terminal.print(" mode:");
      }
      ppmLoop();
      showStage=2;
      break;
 
  case 2:                            // температура и ее поправка
-     Serial.print(" T=");  Serial.print((int)prevTemp);  // температура
-     Serial.print(" Tc=");  Serial.print((int)freqCorr);  // поправка частоты
+     Terminal.print(" T=");  Terminal.print((int)prevTemp);  // температура
+     Terminal.print(" Tc=");  Terminal.print((int)freqCorr);  // поправка частоты
      ppmLoop();
      showStage=3;
      break;
      
  case 3: 
      if(Regs4[6]&2) {           // если требуется доп. информация
-       Serial.print(" M=");  Serial.print(prevDif);    // макс длительность цикла
+       Terminal.print(" M=");  Terminal.print(prevDif);    // макс длительность цикла
        ppmLoop();
-       Serial.print(" A=");  Serial.print(avrLoop>>5); // средняя длительность цикла
+       Terminal.print(" A=");  Terminal.print(avrLoop>>5); // средняя длительность цикла
        ppmLoop();
        if(ppmMicroPPM == 255) {      // в режиме SBus 
-         Serial.print(" B=");  Serial.print(prevLat);  // макс. запаздывание
+         Terminal.print(" B=");  Terminal.print(prevLat);  // макс. запаздывание
          ppmLoop();
-         Serial.print(" E=");  Serial.print(prevErr);  // ошибки пакетов
+         Terminal.print(" E=");  Terminal.print(prevErr);  // ошибки пакетов
          ppmLoop();
        }
      }
@@ -380,20 +380,20 @@ void showState(void)   // Отображение состояния после �
 
   case 4:
      if(Regs4[6]&1) {        // если включен вывод PPM импульсов
-       for(i=0; i<8; i++) { Serial.print("    "); ppmLoop(2); }             // подчистим грязь
+       for(i=0; i<8; i++) { Terminal.print("    "); ppmLoop(2); }             // подчистим грязь
      }
-     Serial.println();  
+     Terminal.println();  
      showStage=showNum=0;
      break;
     
   case 0:                   // стадия вывода PPM импульсов, в свою очеред состоит из nchan стадий 
      if((Regs4[6]&1) && nchan >2) {
-       if(Regs4[6]&4) Serial.print(PPM[showNum],HEX);  // выводим код
-       else Serial.print(code2mks(showNum));     // печатаем значение 
+       if(Regs4[6]&4) Terminal.print(PPM[showNum],HEX);  // выводим код
+       else Terminal.print(code2mks(showNum));     // печатаем значение 
        ppmLoop();
-       Serial.write(' ');
+       Terminal.write(' ');
        if(++showNum >= nchan) {
-         Serial.write('\r');
+         Terminal.write('\r');
          showNum=0;
        }
      }
