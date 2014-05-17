@@ -11,7 +11,14 @@
 
 // Функции меню терминала
 //
-static char regs[] PROGMEM = {1, 2, 3, 4, 5, 6, 11,12,13,14,15,16,17,18,19,20,21,22 }; // номера отображаемых регистров
+
+#if(TX_BOARD_TYPE == 5)       // Регмсттр управления усилителем мощности есть только для 2G  
+#define PA_REG 23
+#else 
+#define PA_REG 0
+#endif
+
+static char regs[] PROGMEM = {1, 2, 3, 4, 5, 6, 11,12,13,14,15,16,17,18,19,20,21,22, PA_REG }; // номера отображаемых регистров
 static char help[][32] PROGMEM = {
   "Bind N",
   "Freq correction const",
@@ -31,6 +38,9 @@ static char help[][32] PROGMEM = {
   "Power min (0-7, +128=highU)",  
   "Power middle (0-7,+128=highU)",
   "Power max (0-7, +128=highU)"
+#if(PA_REG > 0)
+  ,"PA calibr const(0-255)"            // Только для 2G - калибровка усилителя мощности
+#endif  
 };  
   
 char htxt1[] PROGMEM = "\r\nBaychi soft 2013";
@@ -40,7 +50,7 @@ char htxt3[] PROGMEM = "Press 'm' to start MENU";
 void printHeader(void)
 {
   printlnPGM(htxt1);
-  printlnPGM(htxt2,0); Serial.println(version[0]);
+  printlnPGM(htxt2,0); Terminal.println(version[0]);
   showRegs();
   printlnPGM(htxt3);
 }  
@@ -51,10 +61,10 @@ void printlnPGM(char *adr, char ln)   // печать строки из памя
   while(1) {
     b=pgm_read_byte(adr++);
     if(!b) break;
-    Serial.write(b);
+    Terminal.write(b);
   }
 
-  if(ln) Serial.println();  
+  if(ln) Terminal.println();  
 }
 
 
@@ -62,8 +72,8 @@ bool checkMenu(void)   // проверка на вход в меню
 {
    int in; 
    
-   if (Serial.available() > 0) {
-      in= Serial.read();             // все, что пришло, отображаем
+   if (Terminal.available() > 0) {
+      in= Terminal.read();             // все, что пришло, отображаем
       if(in == 'c' || in == 'C') mppmDif=maxDif=0; // сброс статистики загрузки
       if(in == 'm' || in == 'M') return true; // есть вход в меню
    } 
@@ -77,12 +87,12 @@ void getStr(char str[])             // получение строки, заве
   str[0]=0;
   while(1) {
     wdt_reset();               //  поддержка сторожевого таймера
-    if (Serial.available() > 0) {
-       in= Serial.read();             // все, что пришло, отображаем
+    if (Terminal.available() > 0) {
+       in= Terminal.read();             // все, что пришло, отображаем
        if(in > 0) {
-          Serial.write(in);
+          Terminal.write(in);
           if(in == 0xd || in == 0xa) {
-            Serial.println();
+            Terminal.println();
             return;                     // нажали Enter
           }
           if(in == 8) {                 // backspace, удаляем последний символ
@@ -108,10 +118,10 @@ byte margin(byte v)
 
 void print3(unsigned char val)  // печать 3-цифр с выравниваем пробелами
 {
-  if(val < 100) Serial.write(' ');
-  if(val < 10) Serial.write(' ');
-  Serial.print(val);
-  Serial.write(' ');
+  if(val < 100) Terminal.write(' ');
+  if(val < 10) Terminal.write(' ');
+  Terminal.print(val);
+  Terminal.write(' ');
 }  
 
 byte _spi_read(byte address); 
@@ -161,7 +171,7 @@ void showNoise(char str[])             // отображаем уровень ш
           k='#';
         }
      }
-     Serial.write(k); Serial.write(' ');
+     Terminal.write(k); Terminal.write(' ');
      print3(rMin);   
      k=rAvr/R_AVR;  print3(k);
      print3(rMax);
@@ -172,15 +182,15 @@ void showNoise(char str[])             // отображаем уровень ш
        k=margin(k); 
 
        for(j=0; j<=rMax; j++) {                         // нарисуем псевдографик
-         if(j == k) Serial.write('*');
-         else if(j == rMin) Serial.write('<');
-         else if(j == rMax) Serial.write('>');
-         else if(j>rMin && j <rMax) Serial.write('.');
-         else Serial.write(' ');
+         if(j == k) Terminal.write('*');
+         else if(j == rMin) Terminal.write('<');
+         else if(j == rMax) Terminal.write('>');
+         else if(j>rMin && j <rMax) Terminal.write('.');
+         else Terminal.write(' ');
        }
      }
      
-     Serial.println();
+     Terminal.println();
      wdt_reset();               //  поддержка сторожевого таймера
   }
 }
@@ -196,14 +206,14 @@ void showRegs(void)         // показать значения регистр�
 {
   unsigned char i,j=0,k;
   
-  printlnPGM(mtxt3,0); printlnPGM(htxt2+14,0); Serial.println(version[0]);
+  printlnPGM(mtxt3,0); printlnPGM(htxt2+14,0); Terminal.println(version[0]);
   
   for(int i=1; i<=REGS_NUM; i++) {
     if(pgm_read_byte(regs+j) == i) {
-      Serial.print(i);
-      Serial.write('=');
-      Serial.print(read_eeprom_uchar(i));
-      Serial.write('\t');
+      Terminal.print(i);
+      Terminal.write('=');
+      Terminal.print(read_eeprom_uchar(i));
+      Terminal.write('\t');
       printlnPGM(help[j]);   // читаем строки из программной памяти
       j++;
     }
@@ -255,7 +265,7 @@ rep:
     if(val<0 || val>255) continue; 
     if(reg == 0 && val ==0) continue;              // избегаем потери s/n
 
-    Serial.print(reg); Serial.write('=');   Serial.println(val);  // Отобразим полученное
+    Terminal.print(reg); Terminal.write('=');   Terminal.println(val);  // Отобразим полученное
     
     write_eeprom_uchar(reg,val);  // пишем регистр
     read_eeprom();                // читаем из EEPROM    
