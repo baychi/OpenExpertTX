@@ -163,7 +163,7 @@ void RF22B_init_parameter(void)
   else _spi_write(0x09, 199);     // если сброшена, используем умолчание   
   _spi_write(0x0a, 0x05);    // выход CLK 2 МГц ?
 
-#if(TX_BOARD_TYPE==4)         // в Навке почему-то извратились
+#ifdef SWAP_RXTX             // в Навке и Deluxe почему-то не так, как у остальных
    _spi_write(0x0b, 0x15);    // gpio0 TX State
    _spi_write(0x0c, 0x12);    // gpio1 RX State 
 #else 
@@ -390,17 +390,21 @@ byte setPower(byte i=255)           // настройка мощности дл�
  
 // Управление мощностью
 //
-  if(i > 7) {                       // еслм не задано явно
+  if(i > 7) {                       // если не задано явно
     if(PowReg[0] > 0 && PowReg[0] <= 13) { // если задан канал 1-13
       pwm=PPM[PowReg[0]-1];                // берем длительность импульса
       if(pwm < 682) i=PowReg[1];           // и определяем, какую мощность требуют 
       else if(pwm >= 1364) i=PowReg[3];
       else i=PowReg[2];
-    } else if(PowReg[0] == 0) {           // аппаратный переключатель на 3-х позиционном тумблере
+    } 
+#ifdef SW1_IS_ON                        // не для всех типов плат
+    else if(PowReg[0] == 0) {           // аппаратный переключатель на 3-х позиционном тумблере
       if(SW1_IS_ON) i=PowReg[1];          // внизу - режим минмальной мощности
       else if(SW2_IS_ON) i=PowReg[3];     // вверху- режим максимальной мощности
       else i=PowReg[2];                   // в середине - средняя мощность
-    } else i=PowReg[3];                   // если не задано, используем макс. мощность  
+    } 
+#endif    
+    else i=PowReg[3];                   // если не задано, используем макс. мощность  
   }
 
 #if(RFM_POWER_PIN != 0)    
@@ -441,7 +445,7 @@ bool to_tx_mode(void)                  // Подготовка и отсылка
   else sendOnFlyStd(); 
   
   if(nIRQ_1) {                                     // Если не дождались отсылки
-    Serial.println("Timeout");
+    Terminal.println("Timeout");
     return false;
   } 
 
@@ -534,8 +538,8 @@ byte scanZone(byte zn)                     // поиск лучшего чато
       }
     }
     if(j<NOISE_POROG) {                     // если нашли успешно 
-      Serial.write(' '); Serial.print(n);
-      Serial.print("/"); Serial.print(j/4);
+      Terminal.write(' '); Terminal.print(n);
+      Terminal.print("/"); Terminal.print(j/4);
       if(n) buf[n-1]=255;                   // запрещаем соседние частоты
       if(n>1) buf[n-2]=255;
       buf[n]=buf[n+1]=buf[n+2]=255;        // и свою, что-б никто не полез
@@ -612,7 +616,7 @@ repeat:
   hop_list[5]=findChnl(6);
   hop_list[6]=findChnl(3);
   hop_list[7]=findChnl(7);
-  Serial.println();
+  Terminal.println();
   
   for(i=0; i<8; i++) {         // проверяем каналы
    if(hop_list[i] > LAST_FREQ_CHNL) {
@@ -623,7 +627,7 @@ repeat:
   }    
   t=millis() - t;         // номер бинда формируется благодоря случайному всеремни отпускания кнопки
   i=t&255; if(!i) i++;    // избегаем 0-ля
-  printlnPGM(btxt4,0);  Serial.println(i); // отображаем
+  printlnPGM(btxt4,0);  Terminal.println(i); // отображаем
   Regs4[1]=i;
 
   write_eeprom();         // запоминаем настройки 
@@ -657,27 +661,27 @@ void freqTest(char str[])             // отображаем уровень ш�
 
 printMode:    
     printlnPGM(ftxt1,0);       // печатаем режим  
-    Serial.print(fCh/1000+33); Serial.write('.'); 
-    if((fCh%1000) < 100) Serial.write('0');
-    Serial.print(fCh%1000);
+    Terminal.print(fCh/1000+33); Terminal.write('.'); 
+    if((fCh%1000) < 100) Terminal.write('0');
+    Terminal.print(fCh%1000);
     p=setPower(p);              // берем можность по умолчанию
     delay(10);
     Green_LED_ON;                // сигнализируем о начале
     _spi_write(0x07, RF22B_PWRSTATE_TX);              // старт передачи
 
-    printlnPGM(ftxt2,0); Serial.print(p);
-    printlnPGM(ftxt3,0); Serial.print(Regs4[2]);
+    printlnPGM(ftxt2,0); Terminal.print(p);
+    printlnPGM(ftxt3,0); Terminal.print(Regs4[2]);
     printlnPGM(ftxt4,0);
 
-    while(Serial.available() == 0) {
+    while(Terminal.available() == 0) {
       wdt_reset();               //  поддержка сторожевого таймера
       delayMicroseconds(999);
       SDI_on;
       delayMicroseconds(999);
       SDI_off;
     }
-    i=Serial.read();
-    Serial.println();
+    i=Terminal.read();
+    Terminal.println();
     _spi_write(0x07, RF22B_PWRSTATE_READY);
     Green_LED_OFF;                // сигнализируем о завершении
 
